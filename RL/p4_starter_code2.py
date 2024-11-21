@@ -138,7 +138,7 @@ class GradualMovePolicy:
         if self.current_pos is None:
             self.current_pos = self.origin
 
-    def move_toward_target(self, target_text):
+    def move_toward_target(self):
         if self.target_pos is None or self.current_pos is None:
             return {
                 "action_type": 1,
@@ -184,22 +184,8 @@ class GradualMovePolicy:
 
         # print(">>", current, direction[0], self.current_pos)
 
-        for element in observation['dom_elements']:
-            if element['text'].strip() == target_text.strip():
-                # print(element['text'])
-                cursor_over_button = (
-                        element['left'][0] + (element['width'][0] / 4) <= self.current_pos[0] <= element['left'][0] + element['width'][0] and
-                        element['top'][0] + (element['height'][0] / 4) <= self.current_pos[1] <= element['top'][0] + element['height'][0]
-                )
-                if cursor_over_button:
-                    return {
-                        "action_type": 2,  # Move_COORD
-                        "coords": self.current_pos,
-                        "key": 0
-                    }
-
         return {
-            "action_type": 1,  # Move_COORD
+            "action_type": 1,  # CLICK_COORDS
             "coords": self.current_pos,
             "key": 0
         }
@@ -217,23 +203,25 @@ class GradualMovePolicy:
         if self.target_pos is None:
             self.target_pos = self.get_target_position(dom_elements, target)
 
-        return self.move_toward_target(target)
+        return self.move_toward_target()
 
 
 # This is the main entry
 # env = gymnasium.make('miniwob/click-test-2-v1', render_mode='human')
-# env = gymnasium.make('miniwob/click-test-2-v1', render_mode='human')
-# circle-center
 env = gymnasium.make('miniwob/circle-center', render_mode='human')
+# "click-checkboxes-soft"
+# "social-media-all"
+# "identify-shape"
+
 # env.unwrapped.instance = env.unwrapped._hard_reset_instance()
-env = gymnasium.wrappers.TimeLimit(env, max_episode_steps=99999999999)
+# env = gymnasium.wrappers.TimeLimit(env, max_episode_steps=99999999999)
 
 # Create our modified environment
 # env = TimeBasedRewardWrapper(env)
 
 try:
     # use our policy
-    policy = GradualMovePolicy(step_size=5)
+    # policy = GradualMovePolicy(step_size=5)
     observation, info = env.reset(seed=42)
 
     # show the target
@@ -241,12 +229,18 @@ try:
     # assert observation["fields"] == (("target", "ONE"),)
 
     print(observation["utterance"], observation["fields"])
+    print(observation['dom_elements'])
     
     final_reward = 0
 
     # run for some time
     for i in range(10000):
-        action = policy(observation)
+
+        action = {
+            "action_type": 1,
+            "coords": np.array([0, 0]),
+            "key": 0
+        }
         observation, reward, terminated, truncated, _ = env.step(action)
         # print(f"Step {i}: Reward={reward}, Position={action['coords']}")
 

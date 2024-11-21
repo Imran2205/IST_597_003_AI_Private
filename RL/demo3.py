@@ -1,278 +1,257 @@
-import gymnasium
-import miniwob
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collections import deque, namedtuple
+import numpy as np
+from collections import deque
 import random
+import gymnasium
+import miniwob
+from miniwob.action import ActionTypes, ActionSpaceConfig
 
-# Experience replay memory
-Experience = namedtuple('Experience', ['state', 'action', 'reward', 'next_state', 'done'])
 
-class DistanceRewardWrapper(gymnasium.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.previous_distance = None
+class ActionHead(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        # Action type prediction
+        self.action_type = nn.Linear(hidden_dim, 3)  # Example: CLICK_COORDS, TYPE_TEXT, PRESS_KEY
 
-    def get_target_position(self, dom_elements, target_text):
-        """Find the target button's center position"""
-        for element in dom_elements:
-            if element['text'].strip() == target_text.strip():
-                return np.array([
-                    element['left'] + element['width'] / 2,
-                    element['top'] + element['height'] / 2
-                ])
-        return None
-
-    def calculate_distance(self, current_pos, target_pos):
-        """Calculate Euclidean distance between current position and target"""
-        return np.linalg.norm(current_pos - target_pos)
-
-    def reset(self, **kwargs):
-        observation, info = self.env.reset(**kwargs)
-        target = dict(observation['fields'])['target']
-        target_pos = self.get_target_position(
-            observation['dom_elements'],
-            target
-        )
-        # Initialize previous_distance with distance from (0,0)
-        self.previous_distance = self.calculate_distance(
-            np.array([0, 0]),
-            target_pos
-        )
-        return observation, info
-
-    def step(self, action):
-        observation, _, terminated, truncated, info = self.env.step(action)
-
-        # Get current cursor position from action
-        current_pos = action['coords']
-
-        # Get target position
-        target = dict(observation['fields'])['target']
-        target_pos = self.get_target_position(
-            observation['dom_elements'],
-            target
+        # Coordinate prediction (for click actions)
+        self.coords = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2)  # x, y coordinates
         )
 
-        # print(target_pos)
+        # Text prediction (for type actions)
+        self.text = nn.Linear(hidden_dim, 128)  # Vocabulary size
 
-        # Calculate current distance
-        current_distance = self.calculate_distance(current_pos, target_pos)
-
-        # Calculate reward based on distance change
-        if self.previous_distance is not None:
-            if current_distance < self.previous_distance:
-                reward = 1.0  # Distance decreased
-            elif current_distance > self.previous_distance:
-                reward = -1.0  # Distance increased
-            else:
-                reward = 0.0  # Distance unchanged
-        else:
-            reward = 0.0
-
-        # Update previous distance
-        self.previous_distance = current_distance
-
-        # Episode terminates when cursor is over button
-        for element in observation['dom_elements']:
-            if element['text'].strip() == target.strip():
-                # print(element['left'] , current_pos , element['left'] , element['width'], action['coords'])
-                # print(element['top'] , current_pos[1] , element['top'] , element['height'])
-                cursor_over_button = (
-                        element['left'] <= current_pos[0] <= element['left'] + element['width'] and
-                        element['top'] <= current_pos[1] <= element['top'] + element['height']
-                )
-                if cursor_over_button:
-                    terminated = True
-                    reward = 10.0  # Bonus reward for reaching the target
-                break
-
-        return observation, reward, terminated, truncated, info
-class ReplayBuffer:
-    def __init__(self, capacity=10000):
-        self.memory = deque(maxlen=capacity)
-
-    def push(self, state, action, reward, next_state, done):
-        self.memory.append(Experience(state, action, reward, next_state, done))
-
-    def sample(self, batch_size):
-        experiences = random.sample(self.memory, batch_size)
-        return Experience(*zip(*experiences))
-
-    def __len__(self):
-        return len(self.memory)
+        # Key prediction (for key press actions)
+        self.key = nn.Linear(hidden_dim, 10)  # Number of allowed keys
 
 
 class DQN(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(DQN, self).__init__()
-        self.network = nn.Sequential(
-            nn.Linear(state_dim, 128),
+    def __init__(self, input_dim=128, hidden_dim=256):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, action_dim)
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU()
         )
+        self.action_head = ActionHead(hidden_dim)
 
     def forward(self, x):
-        return self.network(x)
+        features = self.encoder(x)
+        return {
+            'action_type': self.action_head.action_type(features),
+            'coords': self.action_head.coords(features),
+            'text': self.action_head.text(features),
+            'key': self.action_head.key(features)
+        }
 
 
-class DQNAgent:
-    def __init__(self, state_dim, action_dim, device='cuda' if torch.cuda.is_available() else 'cpu'):
-        self.device = device
-        self.action_dim = action_dim
+class DQLAgent:
+    def __init__(self, environ, learning_rate=0.001, gamma=0.99, epsilon=1.0):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.q_network = DQN().to(self.device)
+        self.target_network = DQN().to(self.device)
+        self.target_network.load_state_dict(self.q_network.state_dict())
 
-        # Networks
-        self.policy_net = DQN(state_dim, action_dim).to(device)
-        self.target_net = DQN(state_dim, action_dim).to(device)
-        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=learning_rate)
+        self.memory = deque(maxlen=10000)
 
-        # Training parameters
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=0.001)
-        self.memory = ReplayBuffer()
-        self.batch_size = 64
-        self.gamma = 0.99
-        self.epsilon = 1.0
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
-        self.target_update = 10
-        self.step_counter = 0
+        self.gamma = gamma
+        self.epsilon = epsilon
 
-        # Action space discretization
-        self.step_size = 10  # Pixels per step
-        self.actions = [
-            (-self.step_size, 0),  # Left
-            (self.step_size, 0),  # Right
-            (0, -self.step_size),  # Up
-            (0, self.step_size),  # Down
-            (-self.step_size, -self.step_size),  # Diagonal
-            (-self.step_size, self.step_size),
-            (self.step_size, -self.step_size),
-            (self.step_size, self.step_size)
-        ]
+        # Action space configuration
+        self.action_types = ['CLICK_COORDS', 'TYPE_TEXT', 'PRESS_KEY']
+        # self.screen_width = 800
+        # self.screen_height = 600
+        self.screen_height = environ.observation_space["screenshot"].shape[0]
+        self.screen_width = environ.observation_space["screenshot"].shape[1]
+        self.coord_bins = (20, 20)  # Discretize coordinate space
 
-    def get_state(self, observation, current_pos):
-        # Extract target position
-        target = dict(observation['fields'])['target']
-        target_pos = None
+    def preprocess_observation(self, observation):
+        features = []
+        for element in observation['dom_info']:
+            element_features = [
+                element.get('left', 0) / self.screen_width,
+                element.get('top', 0) / self.screen_height,
+                element.get('width', 0) / self.screen_width,
+                element.get('height', 0) / self.screen_height,
+                1.0 if element.get('tag') == 'button' else 0.0,
+                1.0 if element.get('tag') == 'input' else 0.0
+            ]
+            features.extend(element_features)
 
-        # Find target button position
-        for element in observation['dom_elements']:
-            if element['text'].strip() == target.strip():
-                target_pos = np.array([
-                    element['left'][0] + element['width'][0] / 2,
-                    element['top'][0] + element['height'][0] / 2
-                ])
-                break
+        features = features[:128]
+        features.extend([0] * (128 - len(features)))
+        return torch.tensor(features, dtype=torch.float32)
 
-        if target_pos is None:
-            return None
+    def discretize_coords(self, coords):
+        x_bin = int(coords[0] * self.coord_bins[0])
+        y_bin = int(coords[1] * self.coord_bins[1])
+        return np.array([
+            (x_bin + 0.5) * (self.screen_width / self.coord_bins[0]),
+            (y_bin + 0.5) * (self.screen_height / self.coord_bins[1])
+        ])
 
-        # State: [current_x, current_y, target_x, target_y]
-        # print(current_pos, target_pos, element['left'] , element['width'] )
-        state = np.concatenate([current_pos, target_pos])
-        return torch.FloatTensor(state).to(self.device)
-
-    def select_action(self, state):
+    def __call__(self, observation):
         if random.random() < self.epsilon:
-            action_idx = random.randrange(len(self.actions))
+            action_type = random.randint(0, len(self.action_types) - 1)
+            action = {'action_type': action_type}
+
+            if self.action_types[action_type] == 'CLICK_COORDS':
+                action['coords'] = np.array([
+                    random.random() * self.screen_width,
+                    random.random() * self.screen_height
+                ])
+            elif self.action_types[action_type] == 'TYPE_TEXT':
+                action['text'] = 'example'  # Simplified text generation
+            elif self.action_types[action_type] == 'PRESS_KEY':
+                action['key'] = random.randint(0, 9)
+
         else:
+            state = self.preprocess_observation(observation).unsqueeze(0).to(self.device)
             with torch.no_grad():
-                q_values = self.policy_net(state)
-                action_idx = q_values.max(0)[1].item()
+                q_values = self.q_network(state)
+                action_type = torch.argmax(q_values['action_type']).item()
+                action = {'action_type': action_type}
 
-        movement = self.actions[action_idx]
-        return action_idx, movement
+                if self.action_types[action_type] == 'CLICK_COORDS':
+                    coords = q_values['coords'][0].cpu().numpy()
+                    action['coords'] = self.discretize_coords(coords)
+                elif self.action_types[action_type] == 'TYPE_TEXT':
+                    text_logits = q_values['text'][0]
+                    # Convert logits to text (simplified)
+                    action['text'] = 'example'
+                elif self.action_types[action_type] == 'PRESS_KEY':
+                    action['key'] = torch.argmax(q_values['key']).item()
 
-    def update_current_pos(self, current_pos, movement):
-        new_pos = current_pos + np.array(movement)
-        # Clip to ensure cursor stays within screen bounds
-        new_pos = np.clip(new_pos, [0, 0], [160, 160])  # Adjust bounds as needed
-        return new_pos
+        return action
 
-    def train(self):
-        if len(self.memory) < self.batch_size:
+    def train(self, batch_size=32):
+        if len(self.memory) < batch_size:
             return
 
-        experiences = self.memory.sample(self.batch_size)
+        batch = random.sample(self.memory, batch_size)
+        states, actions, rewards, next_states, dones = zip(*batch)
 
-        states = torch.stack(experiences.state)
-        next_states = torch.stack(experiences.next_state)
-        actions = torch.tensor(experiences.action, device=self.device)
-        rewards = torch.tensor(experiences.reward, device=self.device, dtype=torch.float32)
-        dones = torch.tensor(experiences.done, device=self.device, dtype=torch.float32)
+        states = torch.stack([self.preprocess_observation(s) for s in states]).to(self.device)
+        next_states = torch.stack([self.preprocess_observation(s) for s in next_states]).to(self.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
 
-        current_q_values = self.policy_net(states).gather(1, actions.unsqueeze(1))
-        next_q_values = self.target_net(next_states).max(1)[0].detach()
-        target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
+        current_q_values = self.q_network(states)
+        with torch.no_grad():
+            next_q_values = self.target_network(next_states)
 
-        # Compute loss and update
-        loss = nn.MSELoss()(current_q_values, target_q_values.unsqueeze(1))
+        # Calculate loss for each action component
+        losses = []
+
+        # Action type loss
+        action_type_loss = nn.CrossEntropyLoss()(
+            current_q_values['action_type'],
+            torch.tensor([a['action_type'] for a in actions]).to(self.device)
+        )
+        losses.append(action_type_loss)
+
+        # Add other losses for coords, text, and keys based on action types
+
+        loss = sum(losses)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
         # Update target network
-        self.step_counter += 1
-        if self.step_counter % self.target_update == 0:
-            self.target_net.load_state_dict(self.policy_net.state_dict())
+        if random.random() < 0.01:
+            self.target_network.load_state_dict(self.q_network.state_dict())
 
         # Decay epsilon
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        self.epsilon = max(0.01, self.epsilon * 0.995)
+
+    def store_transition(self, state, action, reward, next_state, done):
+        self.memory.append((state, action, reward, next_state, done))
 
 
-def train_agent():
-    env = gymnasium.make('miniwob/click-test-2-v1', render_mode='human')
-    env = DistanceRewardWrapper(env)
+def train_agent(env, episodes=1000):
+    agent = DQLAgent(environ=env)
 
-    state_dim = 4  # [current_x, current_y, target_x, target_y]
-    action_dim = 8  # 8 possible movements
-    agent = DQNAgent(state_dim, action_dim)
+    for episode in range(episodes):
+        observation, info = env.reset()
+        episode_reward = 0
 
-    current_pos = np.array([0, 0])
-    episodes = 3
+        while True:
+            action = agent(observation)
+            next_observation, reward, terminated, truncated, info = env.step(action)
 
-    try:
-        for episode in range(episodes):
-            observation, info = env.reset()
-            state = agent.get_state(observation, current_pos)
-            episode_reward = 0
+            agent.store_transition(observation, action, reward, next_observation,
+                                   terminated or truncated)
+            agent.train()
 
-            while True:
-                action_idx, movement = agent.select_action(state)
-                current_pos = agent.update_current_pos(current_pos, movement)
+            episode_reward += reward
+            observation = next_observation
 
-                # Convert to environment action format
-                env_action = {
-                    "action_type": 0,
-                    "coords": current_pos,
-                    "key": 0
-                }
+            if terminated or truncated:
+                print(f"Episode {episode + 1}, Reward: {episode_reward}")
+                break
 
-                next_observation, reward, terminated, truncated, info = env.step(env_action)
-                next_state = agent.get_state(next_observation, current_pos)
-                done = terminated or truncated
-
-                # Store experience
-                agent.memory.push(state, action_idx, reward, next_state, done)
-
-                # Train agent
-                agent.train()
-
-                state = next_state
-                episode_reward += reward
-
-                if done:
-                    print(f"Episode {episode + 1}, Total Reward: {episode_reward}, Epsilon: {agent.epsilon:.3f}")
-                    current_pos = np.array([0, 0])
-                    break
-
-    finally:
-        env.close()
+    return agent
 
 
-if __name__ == "__main__":
-    train_agent()
+# Register all MiniWoB environments
+gymnasium.register_envs(miniwob)
+
+# Define action space config
+action_config = ActionSpaceConfig(
+    action_types=[
+        ActionTypes.CLICK_COORDS,
+        ActionTypes.TYPE_TEXT,
+        ActionTypes.PRESS_KEY
+    ],
+    coord_bins=(20, 20),  # Discretize coordinate space
+    text_max_len=10,
+    allowed_keys=["<Enter>", "<Tab>"]
+)
+
+# Create environment with config
+env = gymnasium.make(
+    'miniwob/click-test-2-v1',
+    render_mode='human',
+    action_space_config=action_config
+)
+
+trained_agent = train_agent(env)
+
+torch.save(trained_agent, 'saved_agent.pt')
+
+# Load the trained agent
+trained_agent = torch.load('saved_agent.pt')  # If you saved the model
+
+# Test loop
+episodes = 100
+total_rewards = []
+
+env.reset()
+for episode in range(episodes):
+    observation, info = env.reset()
+    episode_reward = 0
+    done = False
+
+    while not done:
+        action = trained_agent(observation)
+        observation, reward, terminated, truncated, info = env.step(action)
+        episode_reward += reward
+        done = terminated or truncated
+
+    total_rewards.append(episode_reward)
+    print(f"Episode {episode}: Reward = {episode_reward}")
+
+print(f"Average Reward: {np.mean(total_rewards)}")
+print(f"Success Rate: {sum(r > 0 for r in total_rewards) / episodes}")
+
+# Save
+# torch.save(trained_agent, 'saved_agent.pt')
+
+# Load
+# loaded_agent = torch.save('saved_agent.pt')
