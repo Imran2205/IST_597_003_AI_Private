@@ -29,10 +29,12 @@ def get_sentence_embedding(text, model, tokenizer):
     return embeddings.numpy()
 
 
+model, tokenizer = load_pretrained_model()
+
+
 def compare_strings(str1, str2):
     """Compare two strings using pre-trained embeddings"""
     # Load model and tokenizer
-    model, tokenizer = load_pretrained_model()
     # Get embeddings
     emb1 = get_sentence_embedding(str1, model, tokenizer)
     emb2 = get_sentence_embedding(str2, model, tokenizer)
