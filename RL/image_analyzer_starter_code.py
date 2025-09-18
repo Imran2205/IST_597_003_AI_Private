@@ -1,16 +1,3 @@
-import gymnasium
-import miniwob
-import numpy as np
-from gymnasium import spaces
-import time
-from text_similarity_starter_code import compare_strings
-from miniwob.action import ActionTypes
-import matplotlib.pyplot as plt
-
-import cv2
-import numpy as np
-import easyocr
-
 import cv2
 import numpy as np
 import easyocr
@@ -204,75 +191,19 @@ class ImageDetector:
 
 detector = ImageDetector()
 
+"""
+# Before using this code please install opencv-python, easyocr, and pytesseract using the following command
+# pip install opencv-python easyocr pytesseract
+# Now we can use detector to identify the content from the screenshot of the current window.
+# Use the following line to get the type of the shape shown in the screenshot
 
-# This is our policy
-class GradualMovePolicy:
-    def __init__(self, step_size=5):
-        self.origin = np.array([0, 0])
-        self.step_number = 0
+shape = detector.detect_content(observation['screenshot'][50:125, 40:115]) # Here the observation comes from the miniwob environment
 
-    def __call__(self, observation_):
-        if self.step_number == 0:
-            shape = detector.detect_content(observation['screenshot'][50:125, 40:115])
-            print(shape)
+# The shape variable contains a dictionary in the following format:
+# {'type': 'number', 'value': '7', 'confidence': 0.96}
+# {'type': 'letter', 'value': 'W', 'confidence': 0.9762827002734618}
+# {'type': 'triangle', 'properties': {'vertices': 3, 'area': 435.0, 'aspect_ratio': 1.0, 'solidity': 0.9688195991091314, 'center': (37, 34)}}
 
-            for element in observation_['dom_elements']:
-                if element['text'].lower() == shape['type'].lower():
-                    action = env.unwrapped.create_action(
-                        ActionTypes.CLICK_ELEMENT,
-                        ref=element["ref"]
-                    )
-                    time.sleep(1.0)
-                    return action
-
-            self.step_number += 1
-
-        return {
-            "action_type": 1,
-            "coords": np.array([0, 0]),
-            "key": 0
-        }
-
-
-# This is the main entry
-# env = gymnasium.make('miniwob/click-test-2-v1', render_mode='human')
-# env = gymnasium.make('miniwob/click-test-2-v1', render_mode='human')
-# circle-center
-env = gymnasium.make('miniwob/identify-shape', render_mode='human')
-# env.unwrapped.instance = env.unwrapped._hard_reset_instance()
-env = gymnasium.wrappers.TimeLimit(env, max_episode_steps=99999999999)
-
-# Create our modified environment
-# env = TimeBasedRewardWrapper(env)
-
-try:
-    # use our policy
-    policy = GradualMovePolicy(step_size=5)
-    observation, info = env.reset(seed=400)
-    print(observation['dom_elements'])
-
-    # show the target
-    # assert observation["utterance"] == "Click button ONE."
-    # assert observation["fields"] == (("target", "ONE"),)
-
-    print(observation["utterance"], observation["fields"])
-    
-    final_reward = 0
-
-    # run for some time
-    for i in range(10000):
-        action = policy(observation)
-        observation, reward, terminated, truncated, _ = env.step(action)
-
-        # print(f"Step {i}: Reward={reward}, Position={action['coords']}")
-
-        if terminated or truncated:
-            print(f"Episode finished with final reward: {reward}")
-            time.sleep(3)
-            policy.target_pos = None
-            policy.current_pos = None
-            policy = GradualMovePolicy(step_size=5)
-            observation, info = env.reset()
-            print(observation["utterance"], observation["fields"])
-finally:
-    env.close()
+# Use shape['type'] to get the name of the shape.
+# shape['type'] can have any of the following values:  square, rectangle, triangle, circle, letter, or number
+"""

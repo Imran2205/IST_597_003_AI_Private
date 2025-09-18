@@ -63,7 +63,7 @@ class GradualMovePolicy:
             self.check_boxes_texts = []
             self.match_matrix = None
 
-        time.sleep(0.5)
+        time.sleep(1.5)
 
         return action
 
