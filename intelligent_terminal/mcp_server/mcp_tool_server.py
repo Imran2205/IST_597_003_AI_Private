@@ -16,7 +16,8 @@ proc = None
 #     bufsize=1
 # )
 
-async def run_in_terminal(cmd):
+
+async def run_in_terminal(cmd):  # Function for running the terminal command
     global proc
     if proc is not None:
         if not cmd.endswith("\n"):
@@ -47,18 +48,26 @@ Output: {input.get('terminal_output', 'Unknown')}
 """
 
 @mcp.tool()
-async def initiate_terminal(cwd=None):
+async def initiate_terminal(cwd: str = ""):
     """
-    Initiate a new terminal.
+    Initiate a new terminal. Please use the tool when you are running a command for the first time.
+    This will by default initiate a bash terminal in users home directory. You can run commands after initializing the
+    terminal with this tool.
 
     Args:
         cwd: directory where the terminal is initiated
     """
     global proc
     if proc is not None:
-        return "Terminal is already open."
+        proc.terminate()
+        proc.wait()
+        # return "Terminal is already open."
 
-    if cwd is not None:
+    if cwd != "":
+        if "~" in cwd:
+            cwd = cwd.replace("~", user_home)
+        if not os.path.isdir(cwd):
+            return f"{cwd} is not a directory"
         proc = subprocess.Popen(
             ["/bin/bash"],
             cwd=cwd,
@@ -94,8 +103,9 @@ async def terminate_terminal():
     return "No terminal is open."
 
 @mcp.tool()
-async def run_command(command) -> str:
-    """Runs a command in the terminal and return the output as a string
+async def run_command(command: str) -> str:
+    """Runs a command in the terminal and return the output as a string.
+    The input command should be one string.
 
     Args:
         command: bash command to run in terminal
