@@ -6,40 +6,7 @@ mcp = FastMCP("terminal")
 
 user_home = os.getenv('HOME')
 proc = None
-# subprocess.Popen(
-#     ["/bin/bash"],
-#     cwd=user_home,
-#     stdin=subprocess.PIPE,
-#     stdout=subprocess.PIPE,
-#     stderr=subprocess.PIPE,
-#     text=True,
-#     bufsize=1
-# )
 
-
-# async def run_in_terminal(cmd):  # Function for running the terminal command
-#     global proc
-#     if proc is not None:
-#         if not cmd.endswith("\n"):
-#             cmd = cmd + "\n"
-
-#         marker = "[END_OF_CMD]"
-#         proc.stdin.write(cmd)
-#         proc.stdin.write(f"echo {marker}\n")
-#         proc.stdin.flush()
-
-#         output = []
-#         while True:
-#             line = proc.stdout.readline()
-#             if not line:
-#                 break
-#             if marker in line:
-#                 break
-#             output.append(line.rstrip())
-
-#         return output
-#     else:
-#         return ["No terminal has been initiated. Please initiate a terminal first with `initiate_terminal(working_dir)`"]
 
 def format_output(input: dict) -> str:
     return f"""
@@ -143,7 +110,6 @@ async def run_command(command: str) -> str:
     
     except Exception as e:
         return f"ERROR: An exception occured {type(e).__name__}. Details: {e}"
-
 
 if __name__ == "__main__":
     # Initialize and run the server
