@@ -56,11 +56,15 @@ class OllamaMCPClient:
         # 8. iterate over avaiable tools
         self.available_tools = []
         for tool in response.tools:
-            tool_descriptor["function"]["name"] = tool.name
-            tool_descriptor["function"]["description"] = tool.description
-            tool_descriptor["function"]["parameters"] = tool.inputSchema
-
-            self.available_tools.append(tool_descriptor.copy())
+            tool_descriptor = {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.inputSchema,
+                },
+            }                        
+            self.available_tools.append(tool_descriptor)
 
         
         # 9. debug: print the tool names
@@ -92,7 +96,9 @@ class OllamaMCPClient:
                             "- If the file or folder requested does not exist, clearly state that."
                             "- If listing a directory, summarize how many items exist and their names."
                             "- If showing file metadata, summarize size, date, and other key info."
-        }) # are: 'initiate_terminal', 'run_command', 'terminate_terminal'.
+                            "- If an exception  occured after calling a tool, summarize the error details in a clear, human-readable way."
+        }) 
+        # are: 'initiate_terminal', 'run_command', 'terminate_terminal'.
 
 
         while True:
@@ -167,10 +173,13 @@ class OllamaMCPClient:
                                 f"The tool '{tool.function.name}' has finished executing.\n"
                                 f"Raw output:\n{tool_result.content[0].text}\n\n"
                                 "Now explain this result to the user in a clear, human-readable way."
+                                "If an error or exception  occured in the result, summarize it."
                             )
                         })
 
-                        # print(tool_result.content[0].text[:20])
+                        
+                        # if tool_result.content[0].text.startswith("ERROR"):
+                        #     print("Debug: " + tool_result.content[0].text)
 
                         # this is local call to format the output
                         agent_response = ollama.chat(

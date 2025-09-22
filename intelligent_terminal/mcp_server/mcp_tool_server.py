@@ -17,29 +17,29 @@ proc = None
 # )
 
 
-async def run_in_terminal(cmd):  # Function for running the terminal command
-    global proc
-    if proc is not None:
-        if not cmd.endswith("\n"):
-            cmd = cmd + "\n"
+# async def run_in_terminal(cmd):  # Function for running the terminal command
+#     global proc
+#     if proc is not None:
+#         if not cmd.endswith("\n"):
+#             cmd = cmd + "\n"
 
-        marker = "[END_OF_CMD]"
-        proc.stdin.write(cmd)
-        proc.stdin.write(f"echo {marker}\n")
-        proc.stdin.flush()
+#         marker = "[END_OF_CMD]"
+#         proc.stdin.write(cmd)
+#         proc.stdin.write(f"echo {marker}\n")
+#         proc.stdin.flush()
 
-        output = []
-        while True:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            if marker in line:
-                break
-            output.append(line.rstrip())
+#         output = []
+#         while True:
+#             line = proc.stdout.readline()
+#             if not line:
+#                 break
+#             if marker in line:
+#                 break
+#             output.append(line.rstrip())
 
-        return output
-    else:
-        return ["No terminal has been initiated. Please initiate a terminal first with `initiate_terminal(working_dir)`"]
+#         return output
+#     else:
+#         return ["No terminal has been initiated. Please initiate a terminal first with `initiate_terminal(working_dir)`"]
 
 def format_output(input: dict) -> str:
     return f"""
@@ -110,14 +110,39 @@ async def run_command(command: str) -> str:
     Args:
         command: bash command to run in terminal
     """
-    output = await run_in_terminal(command)
-    out_dict = {
-        "terminal_output": "\n".join(output),
-        "input_command": command
-    }
-    final_out = format_output(out_dict)
+    
+    global proc
 
-    return final_out
+    try:
+        output = []
+        if proc is not None:
+            if not command.endswith("\n"):
+                command += "\n"
+
+            proc.stdin.write(command)
+
+            marker = "[END_OF_CMD]" # a hack to know the end of a command output
+            proc.stdin.write(f"echo {marker}\n")
+                    
+            proc.stdin.flush()
+
+            while True:
+                line = proc.stdout.readline()
+                if not line: break
+                if marker in line: break
+                output.append(line.rstrip())        
+        else:
+            output = ["No terminal has been initiated. Please initiate a terminal first with `initiate_terminal(working_dir)`"]
+
+        output_str = f"""
+            Command: {command}
+            Output: {"\n".join(output)}    
+        """
+
+        return output_str
+    
+    except Exception as e:
+        return f"ERROR: An exception occured {type(e).__name__}. Details: {e}"
 
 
 if __name__ == "__main__":
