@@ -9,7 +9,7 @@ import uuid
 
 
 class OllamaMCPClient:
-    def __init__(self, model="gpt-oss:20b"):
+    def __init__(self, model):
         self.model = model
 
         # chat history
@@ -223,7 +223,9 @@ async def main():
         print("Usage: python client.py <path_to_server_script>")
         sys.exit(1)
 
-    client = OllamaMCPClient()
+    client = OllamaMCPClient(model = "llama3.2:3b")
+    # client = OllamaMCPClient(model ="gpt-oss:20b")
+    
     try:
         await client.connect(sys.argv[1])
         await client.communicate()
