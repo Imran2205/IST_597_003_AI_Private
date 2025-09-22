@@ -176,10 +176,9 @@ class OllamaMCPClient:
                                 "If an error or exception  occured in the result, summarize it."
                             )
                         })
-
                         
-                        # if tool_result.content[0].text.startswith("ERROR"):
-                        #     print("Debug: " + tool_result.content[0].text)
+                        if tool_result.content[0].text.startswith("ERROR"):
+                            print("Debug: " + tool_result.content[0].text)
 
                         # this is local call to format the output
                         agent_response = ollama.chat(
