@@ -14,7 +14,7 @@ class OllamaMCPClient:
         self.exit_stack = AsyncExitStack()
         self.model = model
 
-    async def connect(self, server_script_path: str):
+    async def connect(self, server_script_path: str):  # Connecting to mcp server
         server_params = StdioServerParameters(
             command="python",
             args=[server_script_path],
@@ -29,6 +29,14 @@ class OllamaMCPClient:
         print("Connected. Tools:", [t.name for t in tools.tools])
 
     async def chat_loop(self):
+        """
+        Loop works in three steps:
+            i) Users query is verified by the LLM agent. The model generated bash command from users query.
+            ii) The command is sent to mcp server. the server execute command and return the terminals output
+            iii) LLM get the response, summarize it, and response in a human readable way
+
+        :return:
+        """
         print("\nOllama MCP Client Started!")
         print("Type a natural query or bash command (type 'quit' to exit).\n")
 

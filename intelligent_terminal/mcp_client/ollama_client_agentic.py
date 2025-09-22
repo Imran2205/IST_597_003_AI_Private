@@ -70,7 +70,7 @@ class OllamaMCPClient:
         # 9. debug: print the tool names
         # print(self.available_tools)
         for tool in self.available_tools:
-            print(f"Tool name: {tool["function"]["name"]}")
+            print(f"Tool name: {tool['function']['name']}")
 
     async def communicate(self):
         print("\nOllama Agentic MCP Client Started!")
@@ -173,7 +173,7 @@ class OllamaMCPClient:
                                 f"The tool '{tool.function.name}' has finished executing.\n"
                                 f"Raw output:\n{tool_result.content[0].text}\n\n"
                                 "Now explain this result to the user in a clear, human-readable way."
-                                "If an error or exception  occured in the result, summarize it."
+                                "If an error or exception occurred in the result, summarize it."
                             )
                         })
                         

@@ -101,9 +101,10 @@ async def run_command(command: str) -> str:
         else:
             output = ["No terminal has been initiated. Please initiate a terminal first with `initiate_terminal(working_dir)`"]
 
+        out = "\n".join(output)
         output_str = f"""
             Command: {command}
-            Output: {"\n".join(output)}    
+            Output: {out}    
         """
 
         return output_str
