@@ -10,42 +10,72 @@ import uuid
 
 class OllamaMCPClient:
     def __init__(self, model="gpt-oss:20b"):
+        self.model = model
+
+        # chat history
+        self.messages = []  
+
+        # MCP protocol-specific variables: session, exit_stack
         self.session: ClientSession | None = None
         self.exit_stack = AsyncExitStack()
-        self.model = model
-        self.messages = []  # chat history
 
+    # connecting the mcp client with the server
     async def connect(self, server_script_path: str):
+        # 1. set up the connection param for the server
         server_params = StdioServerParameters(
-            command="python",
+            command="python3",  # change it to python if your environement supoorts it
             args=[server_script_path],
             env=None,
         )
+
+        # 2. create the transport layer between the client and the server
         stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        self.stdio, self.write = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.stdio, self.write))
+                
+        # 3. create input and output from the transport layer
+        self.std_output, self.std_input = stdio_transport
+
+        #  4. based on the input and output, create a session
+        self.session = await self.exit_stack.enter_async_context(ClientSession(self.std_output, self.std_input))
+
+        # 5. finally, initialize the session
         await self.session.initialize()
 
-        # List tools from server
+        # 6. query the list of tools avaialable in the server
         response = await self.session.list_tools()
-        self.available_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.inputSchema,
-                },
-            }
-            for tool in response.tools
-        ]
-        # print(self.available_tools)
-        print("Connected. Tools:", [t["function"]["name"] for t in self.available_tools])
+        
+        # 7. the descriptor of a tool expected by ollama
+        tool_descriptor = {
+            "type": "function",
+            "function": {
+                "name": None,
+                "description": None,
+                "parameters": None,
+            },
+        }
+        
+        # 8. iterate over avaiable tools
+        self.available_tools = []
+        for tool in response.tools:
+            tool_descriptor["function"]["name"] = tool.name
+            tool_descriptor["function"]["description"] = tool.description
+            tool_descriptor["function"]["parameters"] = tool.inputSchema
 
-    async def chat_loop(self):
+            self.available_tools.append(tool_descriptor.copy())
+
+        
+        # 9. debug: print the tool names
+        # print(self.available_tools)
+        for tool in self.available_tools:
+            print(f"Tool name: {tool["function"]["name"]}")
+
+    async def communicate(self):
         print("\nOllama Agentic MCP Client Started!")
         print("Type a natural query or bash command (type 'quit' to exit).\n")
 
+        # booting the mcp server terminal
+        result = await self.session.call_tool("initiate_terminal", {"cwd": ""})
+        print(result.content[0].text)
+        
         self.messages.append({
             "role": "system",
             "content": "You are an AI assistant that can use terminal tools. You can access file system using the terminal."
@@ -64,74 +94,77 @@ class OllamaMCPClient:
                             "- If showing file metadata, summarize size, date, and other key info."
         }) # are: 'initiate_terminal', 'run_command', 'terminate_terminal'.
 
-        result = await self.session.call_tool("initiate_terminal", {"cwd": ""})
-        print(result.content[0].text)
 
         while True:
             try:
+                # take user input from the console/input
                 user_query = input("\n$ ").strip()
+                
+                # sanity check: whether the user wants to exit
                 if user_query.lower() in {"quit", "exit"}:
                     break
 
-                self.messages.append({"role": "user", "content": user_query})
+                # formating the message
+                self.messages.append(
+                    {
+                        "role": "user", 
+                        "content": user_query
+                    }
+                )
 
-                stream = ollama.chat(
+                agent_response = ollama.chat(
                     model=self.model,
                     messages=self.messages,
                     tools=self.available_tools,
                     stream=True,
                 )
 
-                assistant_content = []
+                response_buffer = []
                 tool_calls = []
 
                 # print("\n#####MODEL THINKING#####")
-                for chunk in stream:
+                for chunk in agent_response:
                     if chunk.message.content:
                         print(chunk.message.content, end='', flush=True)
-                        assistant_content.append(chunk.message.content)
+                        response_buffer.append(chunk.message.content)
 
                     if chunk.message.tool_calls:
                         tool_calls.extend(chunk.message.tool_calls)
                 # print("\n#####END MODEL THINKING#####")
 
-                assistant_msg = {
+                # ollama-supported format
+                response_log = {
                     "role": "assistant",
-                    "content": "".join(assistant_content),
+                    "content": "".join(response_buffer),
                     "tool_calls": tool_calls,
                 }
 
-                self.messages.append(assistant_msg)
+                self.messages.append(response_log)
 
                 # print(assistant_msg)
 
-                if assistant_msg["content"] and not assistant_msg.get("tool_calls"):
-                    # print("\n" + assistant_msg["content"])
-                    continue
+                # if response_log["content"] and not response_log.get("tool_calls"):
+                #     # print("\n" + assistant_msg["content"])
+                #     continue
 
-                if "tool_calls" in assistant_msg:
-                    for tool_call in assistant_msg["tool_calls"]:
-                        tool_name = tool_call.function.name
-                        tool_args = tool_call.function.arguments
+                if "tool_calls" in response_log:
+                    for tool in response_log["tool_calls"]:
+                        tool_name = tool.function.name
+                        tool_args = tool.function.arguments
 
                         print(f"Model requested tool: {tool_name} {tool_args}")
 
+                        # actually calling the tool in mcp server
                         tool_result = await self.session.call_tool(tool_name, tool_args)
 
-                        # self.messages.append({
-                        #     "role": "tool",
-                        #     "tool_call_name": tool_call.function.name,
-                        #     "content": f"Tool '{tool_call.function.name}' executed. Here is the raw terminal output:\n{tool_result.content[0].text}\n\nPlease explain this result clearly to the user."
-                        # })
-
-                        print(tool_call)
+                        print(tool)
                         tool_call_id = str(uuid.uuid4())
 
                         self.messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call_id,
                             "content": (
-                                f"The tool '{tool_call.function.name}' has finished executing.\n"
+                                f"The tool '{tool.function.name}' has finished executing.\n"
                                 f"Raw output:\n{tool_result.content[0].text}\n\n"
                                 "Now explain this result to the user in a clear, human-readable way."
                             )
@@ -139,34 +172,28 @@ class OllamaMCPClient:
 
                         # print(tool_result.content[0].text[:20])
 
-                        stream = ollama.chat(
+                        # this is local call to format the output
+                        agent_response = ollama.chat(
                             model=self.model,
-                            messages=self.messages,
-                            tools=self.available_tools,
+                            messages=self.messages,                            
                             stream=True,
                         )
 
-                        assistant_content = []
-                        tool_calls = []
+                        response_buffer = []                        
 
                         # print("\n#####MODEL FOLLOW-UP THINKING#####")
-                        for chunk in stream:
+                        for chunk in agent_response:
                             if chunk.message.content:
                                 print(chunk.message.content, end='', flush=True)
-                                assistant_content.append(chunk.message.content)
-
-                            if chunk.message.tool_calls:
-                                tool_calls.extend(chunk.message.tool_calls)
+                                response_buffer.append(chunk.message.content)
 
                         print()
                         # print("\n#####END MODEL FOLLOW-UP THINKING#####")
 
                         followup_msg = {
                             "role": "assistant",
-                            "content": "".join(assistant_content),
-                        }
-                        if tool_calls:
-                            followup_msg["tool_calls"] = tool_calls
+                            "content": "".join(response_buffer),
+                        }                        
 
                         self.messages.append(followup_msg)
 
@@ -191,7 +218,7 @@ async def main():
     client = OllamaMCPClient()
     try:
         await client.connect(sys.argv[1])
-        await client.chat_loop()
+        await client.communicate()
     finally:
         await client.cleanup()
 

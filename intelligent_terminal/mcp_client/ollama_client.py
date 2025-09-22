@@ -42,13 +42,13 @@ class OllamaMCPClient:
                     break
 
                 planning_prompt = f"""
-    You are an assistant helping with terminal operations.
-    The user asked: {user_query}
+                    You are an assistant helping with terminal operations.
+                    The user asked: {user_query}
 
-    1. If the input is natural language, translate it into the correct bash command.
-    2. If the input is already a command, verify and return it as-is.
-    3. Return ONLY the bash command, nothing else.
-    """
+                    1. If the input is natural language, translate it into the correct bash command.
+                    2. If the input is already a command, verify and return it as-is.
+                    3. Return ONLY the bash command, nothing else.
+                """
                 planning_response = ollama.chat(
                     model=self.model,
                     messages=[{"role": "user", "content": planning_prompt}],
@@ -61,17 +61,17 @@ class OllamaMCPClient:
                 raw_output = result.content[0].text
 
                 explanation_prompt = f"""
-    The command executed was:
-    {command_to_run}
+                    The command executed was:
+                    {command_to_run}
 
-    The raw terminal output was:
-    {raw_output}
+                    The raw terminal output was:
+                    {raw_output}
 
-    Explain the result to the user in a clear, human-readable way.
-    If the file or folder requested does not exist, clearly state that.
-    If listing a directory, summarize how many items exist and their names.
-    If showing file metadata, summarize size, date, and other key info.
-    """
+                    Explain the result to the user in a clear, human-readable way.
+                    If the file or folder requested does not exist, clearly state that.
+                    If listing a directory, summarize how many items exist and their names.
+                    If showing file metadata, summarize size, date, and other key info.
+                    """
                 explanation_response = ollama.chat(
                     model=self.model,
                     messages=[{"role": "user", "content": explanation_prompt}],
