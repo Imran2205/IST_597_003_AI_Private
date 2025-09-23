@@ -10,9 +10,9 @@ proc = None
 
 def format_output(input: dict) -> str:
     return f"""
-Command: {input.get('input_command', 'Unknown')}
-Output: {input.get('terminal_output', 'Unknown')}
-"""
+        Command: {input.get('input_command', 'Unknown')}
+        Output: {input.get('terminal_output', 'Unknown')}
+    """
 
 @mcp.tool()
 async def initiate_terminal(cwd: str = ""):

@@ -2,12 +2,18 @@
 pip3 install "mcp[cli]" mcp anthropic python-dotenv
 pip3 install ollama
 
+
 # To run
 ## First, run the client
 
 ```
 cd path/to/the/client/folder
 python3 ollama_client_agentic.py /path/to/mcp_server.py
+```
+
+
+```
+python3 mcp_client/weather_client.py mcp_server/weather_server.py
 ```
 
 For example, on my system:

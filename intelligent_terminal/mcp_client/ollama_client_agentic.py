@@ -42,20 +42,11 @@ class OllamaMCPClient:
 
         # 6. query the list of tools avaialable in the server
         response = await self.session.list_tools()
-        
-        # 7. the descriptor of a tool expected by ollama
-        tool_descriptor = {
-            "type": "function",
-            "function": {
-                "name": None,
-                "description": None,
-                "parameters": None,
-            },
-        }
-        
-        # 8. iterate over avaiable tools
+                
+        # 7. iterate over avaiable tools
         self.available_tools = []
         for tool in response.tools:
+            # the descriptor of a tool expected by ollama
             tool_descriptor = {
                 "type": "function",
                 "function": {
