@@ -172,7 +172,7 @@ class MCPClient:
 
 async def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 weather_client.py http://127.0.0.1:8000/mcp")
+        print("Usage: python3 weather_client.py http://127.0.0.1:3000/mcp")
         sys.exit(1)
 
     # client = MCPClient(model="llama3.2:3b")
