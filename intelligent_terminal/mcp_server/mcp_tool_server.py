@@ -2,7 +2,7 @@ import os
 import subprocess
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("terminal")
+mcp = FastMCP(name="terminal", port=3000)
 
 user_home = os.getenv('HOME')
 proc = None
@@ -114,4 +114,4 @@ async def run_command(command: str) -> str:
 
 if __name__ == "__main__":
     # Initialize and run the server
-    mcp.run(transport='stdio')
+    mcp.run(transport='streamable-http')

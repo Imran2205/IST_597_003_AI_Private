@@ -6,6 +6,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 import ollama
 import uuid
+from mcp.client.streamable_http import streamablehttp_client
 
 
 class OllamaMCPClient:
@@ -20,25 +21,30 @@ class OllamaMCPClient:
         self.exit_stack = AsyncExitStack()
 
     # connecting the mcp client with the server
-    async def connect(self, server_script_path: str):
+    async def connect(self, server_path: str):
         # 1. set up the connection param for the server
-        server_params = StdioServerParameters(
-            command="python3",  # change it to python if your environement supoorts it
-            args=[server_script_path],
-            env=None,
-        )
+        # server_params = StdioServerParameters(
+        #     command="python3",  # change it to python if your environement supoorts it
+        #     args=[server_script_path],
+        #     env=None,
+        # )
 
         # 2. create the transport layer between the client and the server
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-                
+        # stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+        transport = await self.exit_stack.enter_async_context(
+            streamablehttp_client(url=server_path)
+        )
+
         # 3. create input and output from the transport layer
-        self.std_output, self.std_input = stdio_transport
+        self.transport_output, self.transport_input, _ = transport
+
 
         #  4. based on the input and output, create a session
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.std_output, self.std_input))
+        self.session = await self.exit_stack.enter_async_context(ClientSession(self.transport_output, self.transport_input))
 
         # 5. finally, initialize the session
         await self.session.initialize()
+        print("Successfully connected and initialized session")
 
         # 6. query the list of tools avaialable in the server
         response = await self.session.list_tools()
@@ -211,10 +217,10 @@ class OllamaMCPClient:
 
 async def main():
     if len(sys.argv) < 2:
-        print("Usage: python client.py <path_to_server_script>")
+        print("Usage: python client.py http://127.0.0.1:3000/mcp")
         sys.exit(1)
 
-    client = OllamaMCPClient(model = "llama3.2:3b")
+    client = OllamaMCPClient(model="llama3.2:3b")
     # client = OllamaMCPClient(model ="gpt-oss:20b")
     
     try:
