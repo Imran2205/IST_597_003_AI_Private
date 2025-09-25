@@ -111,4 +111,9 @@ async def get_forecast(latitude: float, longitude: float) -> str:
 
 if __name__ == "__main__":
     # Initialize and run the server
-    mcp.run(transport='stdio')
+    
+    ## using either stdio (standard input-output), "sse", or 'streamable-http'    
+    # mcp.run(transport='stdio')    
+    mcp.run(transport="streamable-http")
+
+

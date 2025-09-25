@@ -5,6 +5,8 @@ from typing import Optional
 from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
+
 
 import ollama
 import uuid
@@ -19,7 +21,7 @@ class MCPClient:
         
 
     # connecting the mcp client with the server
-    async def connect_to_server(self, server_script_path: str):
+    async def connect_to_server(self, server_path: str):
         """Connect to an MCP server
 
         Args:
@@ -27,20 +29,32 @@ class MCPClient:
         """
 
         # 1. set up the connection param for the server                
-        server_params = StdioServerParameters(
-            command="python3",  # change it to python if your environement supoorts it
-            args=[server_script_path],
-            env=None,
+        # server_params = StdioServerParameters(
+        #     command="python3",  # change it to python if your environement supoorts it
+        #     args=[server_path],
+        #     env=None,
+        # )
+
+        ## 2. create the transport layer between the client and the server
+        
+        # option 1: stdio_client
+        # stdio_transport = await self.exit_stack.enter_async_context(
+        #   stdio_client(server_params)
+        # )
+        
+        # optoin 2: streamablehttp_client
+        transport = await self.exit_stack.enter_async_context(
+            streamablehttp_client(url=server_path)
         )
 
-        # 2. create the transport layer between the client and the server
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-
         # 3. create input and output from the transport layer
-        self.std_output, self.std_input = stdio_transport
+        self.transport_output, self.transport_input, _ = transport
 
         #  4. based on the input and output, create a session
-        self.session = await self.exit_stack.enter_async_context(ClientSession(self.std_output, self.std_input))
+        self.session = await self.exit_stack.enter_async_context(
+            ClientSession(self.transport_output, self.transport_input)
+        )
+        print("Successfully connected and initialized session")
 
         # 5. finally, initialize the session
         await self.session.initialize()
@@ -158,11 +172,11 @@ class MCPClient:
 
 async def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 client.py <path_to_server_script>")
+        print("Usage: python3 weather_client.py http://127.0.0.1:8000/mcp")
         sys.exit(1)
 
-    client = MCPClient(model="llama3.2:3b")
-    # client = MCPClient(model="gpt-oss:20b")
+    # client = MCPClient(model="llama3.2:3b")
+    client = MCPClient(model="gpt-oss:20b")
     try:
         await client.connect_to_server(sys.argv[1])
         await client.chat_loop()
