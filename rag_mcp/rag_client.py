@@ -1,494 +1,285 @@
-"""
-MCP Client with Custom LLM and Gradio Interface
-Connects to FastMCP server and provides a chat interface
-"""
-
 import asyncio
 import sys
-import json
-import re
 import uuid
 from contextlib import AsyncExitStack
 from typing import Optional
 
+import gradio as gr
+import ollama
+
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-import requests
-import gradio as gr
-import logging
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
-class MCPClient:
-    """MCP Client that connects to FastMCP server and uses custom LLM API"""
-    
-    def __init__(self, llm_api_url: str, api_key: str):
-        """
-        Initialize the MCP client
-        
-        Args:
-            llm_api_url: URL of the custom LLM API
-            api_key: API key for the LLM
-        """
-        self.llm_api_url = llm_api_url
-        self.api_key = api_key
-        
-        # MCP protocol-specific variables
+# =========================
+# Ollama + MCP Client
+# =========================
+class OllamaMCPClient:
+    def __init__(self, model: str):
+        self.model = model
+
+        # Chat history
+        self.messages: list[dict] = []
+
+        # MCP protocol bits
         self.session: ClientSession | None = None
         self.exit_stack = AsyncExitStack()
-        
-        # Chat history
-        self.messages = []
-        
-        # Available tools from MCP server
-        self.available_tools = []
-        
-        # LLM API headers
-        self.llm_headers = {
-            "Content-Type": "application/json",
-            "X-API-Key": self.api_key
-        }
-    
+
+        # Tools exposed by MCP (Ollama function-calling descriptor format)
+        self.available_tools: list[dict] = []
+
+        # Single system prompt with MCP-style instructions
+        self.system_prompt = (
+            "You are an AI assistant that can use MCP tools exposed by the server.\n"
+            "- Only call tools by their exact names from the provided tool list.\n"
+            "- Do not invent tool names.\n"
+            "- When you call a tool, provide valid arguments matching its schema.\n"
+            "- After any tool result, explain the result clearly to the user.\n"
+            "- If the requested resource/path doesn't exist, state it plainly.\n"
+            "- If a tool returns an error, summarize the error in human terms.\n"
+        )
+
     async def connect(self, server_url: str):
-        """
-        Connect to the MCP server
-        
-        Args:
-            server_url: URL of the MCP server (e.g., http://127.0.0.1:3000/mcp)
-        """
-        try:
-            logger.info(f"Connecting to MCP server at {server_url}...")
-            
-            # Create the transport layer
-            transport = await self.exit_stack.enter_async_context(
-                streamablehttp_client(url=server_url)
-            )
-            
-            # Create input and output from the transport layer
-            self.transport_output, self.transport_input, _ = transport
-            
-            # Create a session
-            self.session = await self.exit_stack.enter_async_context(
-                ClientSession(self.transport_output, self.transport_input)
-            )
-            
-            # Initialize the session
-            await self.session.initialize()
-            logger.info("Successfully connected and initialized MCP session")
-            
-            # Query the list of tools available on the server
-            response = await self.session.list_tools()
-            
-            # Store available tools with their schemas
-            self.available_tools = []
-            for tool in response.tools:
-                tool_info = {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.inputSchema
+        """Connect to MCP server over HTTP stream and fetch tool schemas."""
+        transport = await self.exit_stack.enter_async_context(
+            streamablehttp_client(url=server_url)
+        )
+        self.transport_output, self.transport_input, _ = transport
+
+        self.session = await self.exit_stack.enter_async_context(
+            ClientSession(self.transport_output, self.transport_input)
+        )
+        await self.session.initialize()
+
+        # Discover tools
+        response = await self.session.list_tools()
+        self.available_tools = []
+        for tool in response.tools:
+            # Ollama's function-calling descriptor
+            self.available_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.inputSchema,  # JSON Schema
+                    },
                 }
-                self.available_tools.append(tool_info)
-                logger.info(f"Registered tool: {tool.name}")
-            
-            logger.info(f"Successfully connected to MCP server with {len(self.available_tools)} tools")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to connect to MCP server: {str(e)}")
-            return False
-    
-    def create_system_prompt(self) -> str:
-        """Create system prompt with tool descriptions"""
-        tool_descriptions = []
-        for tool in self.available_tools:
-            params_desc = []
-            if "properties" in tool["parameters"]:
-                for param_name, param_info in tool["parameters"]["properties"].items():
-                    param_type = param_info.get("type", "unknown")
-                    param_desc = param_info.get("description", "No description")
-                    params_desc.append(f"  - {param_name} ({param_type}): {param_desc}")
-            
-            tool_desc = f"""
-Tool: {tool['name']}
-Description: {tool['description']}
-Parameters:
-{chr(10).join(params_desc) if params_desc else '  No parameters'}"""
-            tool_descriptions.append(tool_desc)
-        
-        tools_text = "\n\n".join(tool_descriptions)
-        
-        return f"""You are a helpful AI assistant that can use tools to help answer questions.
-
-Available Tools:
-{tools_text}
-
-To use a tool, respond in this EXACT format:
-TOOL_CALL: tool_name
-PARAMETERS: {{"param1": value1, "param2": value2}}
-
-After receiving a tool result, you can either:
-1. Make another tool call if needed
-2. Provide a final answer starting with "FINAL_ANSWER:"
-
-Important rules:
-- For arithmetic operations, ALWAYS use the corresponding tool (add, subtract, multiply, divide)
-- To scrape Wikipedia, use the scrape_wikipedia tool with the full URL
-- To answer questions about scraped content, use the query_knowledge tool
-- When you receive a TOOL_RESULT, you MUST explain it to the user in natural language
-- Always start your final response with "FINAL_ANSWER:" when you're done using tools
-- Be concise and clear in your responses
-- If you can't help or don't have enough information, say so clearly
-"""
-    
-    def call_llm(self, prompt: str, max_tokens: int = 500) -> str:
-        """
-        Call the custom LLM API
-        
-        Args:
-            prompt: Prompt to send to the LLM
-            max_tokens: Maximum tokens to generate
-            
-        Returns:
-            LLM response text
-        """
-        data = {
-            "prompt": prompt + "\nAnswer:",
-            "max_tokens": max_tokens,
-            "temperature": 0.7,
-            "top_p": 1.0,
-            "n": 1,
-            "stop": ["\n\n", "Human:"]
-        }
-        
-        try:
-            response = requests.post(
-                self.llm_api_url,
-                headers=self.llm_headers,
-                json=data,
-                timeout=30
             )
-            response.raise_for_status()
-            result = response.json()['choices'][0]['text']
-            return result.strip()
-        except Exception as e:
-            logger.error(f"LLM API call failed: {str(e)}")
-            return f"Error calling LLM: {str(e)}"
-    
-    def parse_tool_call(self, response: str) -> Optional[tuple]:
+
+        # Initialize chat history with system message
+        self.messages = [{"role": "system", "content": self.system_prompt}]
+
+    async def _execute_single_tool(self, tool_call) -> str:
+        """Execute one tool call against MCP and return raw text result."""
+        tool_name = tool_call.function.name
+        tool_args = tool_call.function.arguments or {}
+        result = await self.session.call_tool(tool_name, tool_args)
+        if result.content and len(result.content) > 0 and getattr(result.content[0], "text", None):
+            return result.content[0].text
+        return "Tool executed but returned no content."
+
+    async def chat_once(self, user_text: str, max_tool_turns: int = 4) -> str:
         """
-        Parse tool call from LLM response
-        
-        Returns:
-            Tuple of (tool_name, parameters) or None if no tool call found
+        Handle a single user turn:
+        - Send message to model (with tool schemas)
+        - Execute any requested tools
+        - Feed results back for explanation
+        - Repeat (bounded) if the model chains more tool calls
         """
-        if "TOOL_CALL:" not in response:
-            return None
-        
-        try:
-            # Extract tool name
-            tool_match = re.search(r"TOOL_CALL:\s*([\w_]+)", response)
-            if not tool_match:
-                return None
-            tool_name = tool_match.group(1).strip()
-            
-            # Extract parameters
-            params_match = re.search(r"PARAMETERS:\s*({.*?})", response, re.DOTALL)
-            if not params_match:
-                # Check if tool requires no parameters
-                return (tool_name, {})
-            
-            params_str = params_match.group(1).strip()
-            # Handle single quotes and convert to valid JSON
-            params_str = params_str.replace("'", '"')
-            parameters = json.loads(params_str)
-            
-            logger.info(f"Parsed tool call: {tool_name} with params: {parameters}")
-            return (tool_name, parameters)
-        except Exception as e:
-            logger.error(f"Error parsing tool call: {str(e)}")
-            return None
-    
-    async def execute_tool(self, tool_name: str, parameters: dict) -> str:
-        """
-        Execute a tool via MCP
-        
-        Args:
-            tool_name: Name of the tool to execute
-            parameters: Parameters to pass to the tool
-            
-        Returns:
-            Tool execution result
-        """
-        try:
-            logger.info(f"Executing MCP tool: {tool_name} with params: {parameters}")
-            result = await self.session.call_tool(tool_name, parameters)
-            
-            # Extract text from MCP result
-            if result.content and len(result.content) > 0:
-                return result.content[0].text
-            else:
-                return "Tool executed but returned no content"
-                
-        except Exception as e:
-            error_msg = f"Error executing tool '{tool_name}': {str(e)}"
-            logger.error(error_msg)
-            return error_msg
-    
-    async def process_message(self, user_input: str, max_iterations: int = 10) -> str:
-        """
-        Process a user message with potential tool calls
-        
-        Args:
-            user_input: User's input message
-            max_iterations: Maximum number of tool calling iterations
-            
-        Returns:
-            Final response to the user
-        """
-        # Build prompt with system message and history
-        system_prompt = self.create_system_prompt()
-        
-        messages = [system_prompt]
-        
-        # Add recent conversation history (last 3 exchanges)
-        for msg in self.messages[-6:]:
-            messages.append(msg)
-        
-        messages.append(f"\nUser: {user_input}\nAssistant:")
-        full_prompt = "\n".join(messages)
-        
-        iteration = 0
-        current_prompt = full_prompt
-        conversation_log = []
-        
-        while iteration < max_iterations:
-            iteration += 1
-            logger.info(f"Iteration {iteration}/{max_iterations}")
-            
-            # Get LLM response
-            response = self.call_llm(current_prompt, max_tokens=500)
-            conversation_log.append(("assistant", response))
-            
-            # Check if this is a final answer
-            if "FINAL_ANSWER:" in response:
-                final_answer = response.split("FINAL_ANSWER:")[-1].strip()
-                
-                # Update conversation history
-                self.messages.append(f"User: {user_input}")
-                self.messages.append(f"Assistant: {final_answer}")
-                
-                return final_answer
-            
-            # Try to parse tool call
-            tool_call = self.parse_tool_call(response)
-            
-            if tool_call is None:
-                # No tool call found, treat as final answer
-                self.messages.append(f"User: {user_input}")
-                self.messages.append(f"Assistant: {response}")
-                return response
-            
-            # Execute the tool
-            tool_name, parameters = tool_call
-            tool_result = await self.execute_tool(tool_name, parameters)
-            conversation_log.append(("tool", f"{tool_name}: {tool_result}"))
-            
-            # Add tool result to prompt for next iteration
-            current_prompt += f"\n{response}\n\nTOOL_RESULT: {tool_result}\n\nNow explain this result to the user in clear, natural language. Start with 'FINAL_ANSWER:' when done.\n\nAssistant:"
-        
-        # Max iterations reached
-        return "I apologize, but I couldn't complete the task within the allowed steps. Please try rephrasing your question."
-    
+        self.messages.append({"role": "user", "content": user_text})
+
+        # Iteratively allow tool usage then explain results
+        for _ in range(max_tool_turns):
+            # Ask model, allowing tool calls
+            stream = ollama.chat(
+                model=self.model,
+                messages=self.messages,
+                tools=self.available_tools,
+                stream=True,
+            )
+
+            assistant_text_chunks = []
+            tool_calls = []
+
+            # Collect streamed text and tool calls (if any)
+            for chunk in stream:
+                if chunk.message.content:
+                    assistant_text_chunks.append(chunk.message.content)
+                if chunk.message.tool_calls:
+                    tool_calls.extend(chunk.message.tool_calls)
+
+            assistant_text = "".join(assistant_text_chunks).strip()
+            self.messages.append(
+                {"role": "assistant", "content": assistant_text, "tool_calls": tool_calls or []}
+            )
+
+            # If no tools were requested, we are done
+            if not tool_calls:
+                return assistant_text if assistant_text else "(no response)"
+
+            # Execute each tool, then ask the model to explain results
+            for tc in tool_calls:
+                raw = await self._execute_single_tool(tc)
+                tool_call_id = str(uuid.uuid4())
+
+                # Provide structured tool result to the model
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": (
+                            f"The tool '{tc.function.name}' has finished executing.\n"
+                            f"Raw output:\n{raw}\n\n"
+                            "Now explain this result to the user in a clear, human-readable way. "
+                            "If an error occurred, summarize it plainly."
+                        ),
+                    }
+                )
+
+            # Ask the model to produce the human explanation (no extra tools necessary here,
+            # but we allow them in case the model wants to chain)
+            stream2 = ollama.chat(
+                model=self.model,
+                messages=self.messages,
+                tools=self.available_tools,
+                stream=True,
+            )
+
+            assistant_followup_chunks = []
+            for chunk in stream2:
+                if chunk.message.content:
+                    assistant_followup_chunks.append(chunk.message.content)
+
+            followup = "".join(assistant_followup_chunks).strip()
+            self.messages.append({"role": "assistant", "content": followup})
+
+            # If the follow-up contains no new tool calls (most cases), return it
+            # Otherwise, the loop will continue and allow another round
+            if followup:
+                # Quick peek if last streamed chunk asked for more tools (rare)
+                # If Ollama included tool_calls, they'd be attached to the assistant message.
+                if not getattr(chunk.message, "tool_calls", None):
+                    return followup
+
+        return "I couldn't complete this within the allowed tool-call steps. Try refining your request."
+
     async def cleanup(self):
-        """Clean up resources"""
         await self.exit_stack.aclose()
-        logger.info("MCP client cleaned up")
 
 
-# ============================================================================
-# Gradio Interface
-# ============================================================================
-
-class GradioInterface:
-    """Gradio interface for the MCP client"""
-    
-    def __init__(self, client: MCPClient):
+# =========================
+# Gradio UI
+# =========================
+class GradioOllamaMCPApp:
+    def __init__(self, client: OllamaMCPClient):
         self.client = client
-        self.loop = None
-    
-    def chat(self, message: str, history: list) -> str:
-        """
-        Process chat message
-        
-        Args:
-            message: User message
-            history: Chat history (not used in current implementation)
-            
-        Returns:
-            Bot response
-        """
-        try:
-            # Run async function in the event loop
-            if self.loop is None:
-                self.loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(self.loop)
-            
-            response = self.loop.run_until_complete(
-                self.client.process_message(message)
-            )
-            return response
-        except Exception as e:
-            logger.error(f"Error in chat: {str(e)}")
-            return f"I apologize, but I encountered an error: {str(e)}"
-    
-    def clear_chat(self):
-        """Clear chat history"""
-        self.client.messages = []
-        return None
-    
-    async def clear_knowledge_async(self):
-        """Clear knowledge base via MCP tool"""
-        try:
-            result = await self.client.execute_tool("clear_knowledge_base", {})
-            return [[None, result]]
-        except Exception as e:
-            error_msg = f"Error clearing knowledge base: {str(e)}"
-            logger.error(error_msg)
-            return [[None, error_msg]]
-    
-    def clear_knowledge(self):
-        """Wrapper for clear_knowledge_async"""
-        if self.loop is None:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-        
-        return self.loop.run_until_complete(self.clear_knowledge_async())
-    
-    def create_interface(self):
-        """Create and return Gradio interface"""
-        custom_css = """
-        #chatbot-container {
-            height: calc(100vh - 230px) !important;
-            overflow-y: auto;
-        }
-        #input-container {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            padding: 20px;
-            background-color: white;
-            border-top: 1px solid #ccc;
-        }
-        """
-        
-        with gr.Blocks(css=custom_css, title="MCP Agent Chat") as iface:
-            gr.Markdown("""
-            # 🤖 MCP Agent Chatbot
-            
-            This chatbot uses the Model Context Protocol (MCP) to interact with tools:
-            - **Arithmetic**: Add, subtract, multiply, divide numbers
-            - **Wikipedia**: Scrape and query Wikipedia pages  
-            - **Knowledge Base**: Query stored information using FAISS vector search
-            
-            **Example queries:**
-            - "What is 25 + 17?"
-            - "Calculate 100 divided by 4"
-            - "Scrape https://en.wikipedia.org/wiki/Artificial_intelligence"
-            - "What is artificial intelligence?" (after scraping)
-            - "Tell me about machine learning" (after scraping relevant content)
-            """)
-            
-            with gr.Column():
-                chatbot = gr.Chatbot(elem_id="chatbot-container", height=500)
-                with gr.Row(elem_id="input-container"):
-                    msg = gr.Textbox(
-                        show_label=False,
-                        placeholder="Type your message here...",
-                        container=False,
-                        scale=4
-                    )
-                    send = gr.Button("Send", scale=1)
+
+    def build_interface(self):
+        with gr.Blocks(title="MCP + Ollama Chat") as demo:
+            gr.Markdown(
+                """
+                # 🤖 MCP + Ollama Chat
                 
-                with gr.Row():
-                    clear = gr.Button("Clear Chat")
-                    clear_kb = gr.Button("Clear Knowledge Base")
-            
-            def user(user_message, history):
-                return "", history + [[user_message, None]]
-            
-            def bot(history):
-                user_message = history[-1][0]
-                bot_message = self.chat(user_message, history[:-1])
-                history[-1][1] = bot_message
-                return history
-            
-            msg.submit(user, [msg, chatbot], [msg, chatbot], queue=False).then(
-                bot, chatbot, chatbot
+                This chat uses an **Ollama** model and calls **MCP server tools** when needed.
+                - Tools are fetched from your MCP server automatically.
+                - The model decides when to call a tool and explains results.
+
+                **Tip:** Ask it to run a terminal command (if your MCP server exposes terminal tools),
+                list files, read content, scrape pages, etc. (depending on your server).
+                """
             )
-            send.click(user, [msg, chatbot], [msg, chatbot], queue=False).then(
-                bot, chatbot, chatbot
+
+            with gr.Row():
+                mcp_url = gr.Textbox(
+                    label="MCP Server URL",
+                    value="http://127.0.0.1:3000/mcp",
+                    interactive=True,
+                )
+                model_name = gr.Textbox(
+                    label="Ollama Model",
+                    value="llama3.2:3b",
+                    interactive=True,
+                )
+                connect_btn = gr.Button("Connect")
+
+            status = gr.Markdown("**Status:** Not connected.")
+            chat = gr.Chatbot(height=500)
+            msg = gr.Textbox(placeholder="Type your message...", show_label=False)
+            send = gr.Button("Send")
+            clear = gr.Button("Clear")
+
+            # Handlers
+            async def do_connect(url, model):
+                try:
+                    self.client.model = model.strip()
+                    await self.client.connect(url.strip())
+                    return f"**Status:** Connected. Tools available: {len(self.client.available_tools)}"
+                except Exception as e:
+                    return f"**Status:** Connection failed: {e}"
+
+            async def send_msg(history, text):
+                if not text.strip():
+                    return history, ""
+                history = history + [[text, None]]
+                try:
+                    reply = await self.client.chat_once(text.strip())
+                except Exception as e:
+                    reply = f"Error: {e}"
+                history[-1][1] = reply
+                return history, ""
+
+            def do_clear():
+                # Reset only visible chat; keep backend history if desired
+                # If you want to reset the model history too, uncomment the next line:
+                # self.client.messages = [{"role": "system", "content": self.client.system_prompt}]
+                return []
+
+            connect_btn.click(
+                do_connect,
+                inputs=[mcp_url, model_name],
+                outputs=[status],
             )
-            clear.click(self.clear_chat, None, chatbot, queue=False)
-            clear_kb.click(self.clear_knowledge, None, chatbot, queue=False)
-        
-        return iface
+
+            send.click(
+                send_msg,
+                inputs=[chat, msg],
+                outputs=[chat, msg],
+            )
+            msg.submit(
+                send_msg,
+                inputs=[chat, msg],
+                outputs=[chat, msg],
+            )
+            clear.click(do_clear, None, [chat])
+
+        return demo
 
 
-
-# ============================================================================
+# =========================
 # Main
-# ============================================================================
-
-async def main():
-    """Main function to run the client"""
-    
-    # Check command line arguments
+# =========================
+async def _amain():
     if len(sys.argv) < 2:
-        print("Usage: python mcp_client.py <mcp_server_url>")
-        print("Example: python mcp_client.py http://127.0.0.1:3000/mcp")
-        sys.exit(1)
-    
-    mcp_server_url = sys.argv[1]
-        
-    
-    # Initialize MCP client
-    client = OllamaMCPClient(model="llama3.2:3b")
-    
-    client = MCPClient(
-        llm_api_url="http://127.0.0.1:8899/v1/completions",
-        api_key=api_key
-    )
-    
-    # Connect to MCP server
-    connected = await client.connect(mcp_server_url)
-    if not connected:
-        print("Failed to connect to MCP server. Make sure the server is running.")
-        sys.exit(1)
-    
-    # Create Gradio interface
-    gradio_interface = GradioInterface(client)
-    iface = gradio_interface.create_interface()
-    
-    try:
-        # Launch Gradio interface
-        logger.info("Launching Gradio interface on http://127.0.0.1:7860")
-        print("\n" + "="*60)
-        print("MCP Agent Client Started!")
-        print("="*60)
-        print(f"Connected to MCP server: {mcp_server_url}")
-        print(f"Available tools: {len(client.available_tools)}")
-        print("Gradio interface: http://127.0.0.1:7860")
-        print("="*60 + "\n")
-        
-        iface.launch(share=False, server_port=7860)
-    finally:
-        # Clean up
-        await client.cleanup()
+        print("Usage: python app.py http://127.0.0.1:3000/mcp [ollama_model]")
+        print("If you don't pass args, you can still connect from the UI.")
+    # Create client with optional CLI model
+    model = sys.argv[2] if len(sys.argv) >= 3 else "llama3.2:3b"
+    client = OllamaMCPClient(model=model)
+
+    # Optional: connect on startup if URL provided
+    if len(sys.argv) >= 2:
+        try:
+            await client.connect(sys.argv[1])
+            print("Connected at startup. Tools:", len(client.available_tools))
+        except Exception as e:
+            print("Startup connect failed:", e)
+
+    app = GradioOllamaMCPApp(client)
+    demo = app.build_interface()
+    # Launch Gradio (blocking)
+    demo.queue().launch(server_port=7860, share=False)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(_amain())

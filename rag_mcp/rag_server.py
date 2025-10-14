@@ -2,16 +2,31 @@
 MCP Server with FAISS Vector Store and Tools
 Uses FastMCP for easy server setup with arithmetic and Wikipedia tools
 """
+# import os
+# os.environ["OMP_NUM_THREADS"] = "1"
+# os.environ["MKL_NUM_THREADS"] = "1"
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from typing import Any
 import httpx
 from mcp.server.fastmcp import FastMCP
 import numpy as np
+import torch
+
+# Make absolutely sure we won't use MPS even if available
+if hasattr(torch.backends, "mps"):
+    # hard-disable MPS so libs don't probe it
+    torch.backends.mps.is_available = lambda: False  # type: ignore
+    torch.backends.mps.is_built = lambda: False
+
 import faiss
 from sentence_transformers import SentenceTransformer
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import logging
+
+# faiss.omp_set_num_threads(1)
+# torch.set_num_threads(1)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -43,10 +58,10 @@ class VectorStoreManager:
     def add_texts(self, texts: list[str]):
         """Add texts to the vector store"""
         self.initialize()
-        
-        embeddings = self.encoder.encode(texts, show_progress_bar=False)
-        embeddings = np.array(embeddings).astype('float32')
-        
+
+        embeddings = self.encoder.encode(texts, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=False)
+        embeddings = np.ascontiguousarray(embeddings.astype('float32'))
+
         if self.index is None:
             self.index = faiss.IndexFlatL2(self.dimension)
         
@@ -98,6 +113,7 @@ async def add(a: float, b: float) -> str:
     """
     try:
         result = float(a) + float(b)
+        print("Calling add tool")
         return f"The result of {a} + {b} is {result}"
     except (ValueError, TypeError) as e:
         return f"Error: Invalid numbers provided for addition. {str(e)}"
@@ -116,6 +132,7 @@ async def subtract(a: float, b: float) -> str:
     """
     try:
         result = float(a) - float(b)
+        print("Calling subtract tool")
         return f"The result of {a} - {b} is {result}"
     except (ValueError, TypeError) as e:
         return f"Error: Invalid numbers provided for subtraction. {str(e)}"
@@ -134,6 +151,7 @@ async def multiply(a: float, b: float) -> str:
     """
     try:
         result = float(a) * float(b)
+        print("Calling multiply tool")
         return f"The result of {a} * {b} is {result}"
     except (ValueError, TypeError) as e:
         return f"Error: Invalid numbers provided for multiplication. {str(e)}"
@@ -151,6 +169,7 @@ async def divide(a: float, b: float) -> str:
         String containing the quotient result or error if dividing by zero
     """
     try:
+        print("Calling divide tool")
         a, b = float(a), float(b)
         if b == 0:
             return "Error: Division by zero is not allowed."
@@ -182,6 +201,7 @@ async def scrape_wikipedia(url: str) -> str:
     """
     try:
         # Validate URL
+        print("Calling scrape tool")
         result = urlparse(url)
         if not all([result.scheme, result.netloc]) or "wikipedia.org" not in result.netloc:
             return "Error: Invalid URL. Please provide a complete Wikipedia URL (e.g., https://en.wikipedia.org/wiki/Topic)"
@@ -216,8 +236,8 @@ async def scrape_wikipedia(url: str) -> str:
         full_content = f"{title}\n\n{''.join(content)}"
         logger.info(f"Scraped {len(full_content)} characters from {title}")
 
-        # Create summary (first 2000 characters as context)
-        summary = full_content[:2000]
+        # Create summary (first 5000 characters as context)
+        summary = full_content[:5000]
         
         # Store in vector database
         # Break content into chunks for better retrieval
