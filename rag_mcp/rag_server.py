@@ -95,11 +95,7 @@ class VectorStoreManager:
 # Global vector store instance
 vector_store = VectorStoreManager()
 
-
-# ============================================================================
-# Arithmetic Tools
-# ============================================================================
-
+#region Arithmetic Tools for quick testing
 @mcp.tool()
 async def add(a: float, b: float) -> str:
     """Add two numbers together.
@@ -178,11 +174,9 @@ async def divide(a: float, b: float) -> str:
     except (ValueError, TypeError) as e:
         return f"Error: Invalid numbers provided for division. {str(e)}"
 
+#endregion arithmatic tools
 
-# ============================================================================
-# Wikipedia Tools
-# ============================================================================
-
+#region Wikipedia Tool
 @mcp.tool()
 async def scrape_wikipedia(url: str) -> str:
     """Scrape and store information from a Wikipedia page.
@@ -266,8 +260,9 @@ async def scrape_wikipedia(url: str) -> str:
         error_msg = f"Error scraping Wikipedia: {str(e)}"
         logger.error(error_msg)
         return error_msg
+#endregion Wikipedia tool
 
-
+#region Knowledge query tools
 @mcp.tool()
 async def query_knowledge(question: str) -> str:
     """Query the knowledge base for information about previously scraped Wikipedia content.
@@ -325,10 +320,7 @@ async def clear_knowledge_base() -> str:
         return error_msg
 
 
-# ============================================================================
 # Server Status Tool
-# ============================================================================
-
 @mcp.tool()
 async def get_server_status() -> str:
     """Get the current status of the MCP server and vector database.
@@ -341,22 +333,20 @@ async def get_server_status() -> str:
     is_initialized = vector_store.initialized
     
     status = f"""
-MCP Server Status:
-- Server: Running
-- Vector Store Initialized: {is_initialized}
-- FAISS Index Created: {has_index}
-- Stored Documents: {doc_count}
-- Available Tools: add, subtract, multiply, divide, scrape_wikipedia, query_knowledge, clear_knowledge_base, get_server_status
+        MCP Server Status:
+        - Server: Running
+        - Vector Store Initialized: {is_initialized}
+        - FAISS Index Created: {has_index}
+        - Stored Documents: {doc_count}
+        - Available Tools: add, subtract, multiply, divide, scrape_wikipedia, query_knowledge, clear_knowledge_base, get_server_status
 
-Ready to accept requests!
-"""
+        Ready to accept requests!
+        """
     return status.strip()
 
+#endregion knowledge query tools
 
-# ============================================================================
 # Main
-# ============================================================================
-
 if __name__ == "__main__":
     logger.info("Starting MCP Server with LLM Agent Tools...")
     logger.info("Available tools: arithmetic operations, Wikipedia scraping, knowledge querying")
