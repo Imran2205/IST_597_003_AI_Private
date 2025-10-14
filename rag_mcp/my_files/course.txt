@@ -1,0 +1,411 @@
+# Group 3:
+=========================
+- Stackoverflow v.2.0
+- data/evidence: personal 
+- navigation challenges 
+- spread the 
+- steering away from chatbots
+- undo chatGPT
+- how can UX navigable stack overflow 
+- karma/points (gamified) to improve the community (
+- safe-space 
+- method: surveys/interviews (5-6); usability testing (A/B testing); SUS scores, NASA-TLX
+
+# Group 4:
+========================
+Research paper:
+- Doom's scrolling (dark patterns) 
+- addiction (algorithmic design)
+- promotes doom's scrolling
+- how effective the current intervention (apple screen time)
+- human-social 
+- multi-disciplinary challenges
+- individual-based (advertisement)
+- literature reviews
+- 
+
+
+--------------
+- broader category: finance (splitem)
+- background: the app is already built as part of HCDD 340 (mobile computing)
+- deliverable: a smartphone app
+-- Receipt scannaer
+-- Each person can choose what they ordered
+-- Bill splitter
+-- React native (web, mongodb)
+
+
+## Potential contributions: 
+- there are similar apps (e.g., Zelle, Splitwise <https://www.splitwise.com>);
+- taking the app in real world; 
+- seeking feedback from real users, and improve it based on their feedback
+- deploy it through Test Flight app;
+- use an existing app (e.g., Splitwise as the baseline); 
+- use expo.js, a cross platform react.js framework for Android and iOS version 
+-------------------
+
+- fiscally responsible  
+- consider
+-----------------
+Idea 2:
+Medical obgyn 
+Medical: doctor, doctor's appointment,  
+Baseline: reports, compilation of reports, perf
+Research components: prescription, 
+ 
+ollama
+---------
+
+
+# Group 2:
+===============================
+
+## Idea 1:
+- broader category: social network
+- baseline: tinder-style UI, Facebook groups
+- cultural exchange, funding, location, photos of food, facts, stories,
+-- I am from this countries, people from same cultures can connect and exchange
+- groups connect:
+- chat () 
+- tinder like interface
+- location-based: Penn State undergrads
+
+
+-
+## Idea 2: google chrome extension:
+
+- broader category: collaborative entertainment/wellbeing 
+- baseline: Hulu Watch Party, Truth or Dare game
+- AI roles:  prompt creation based on content analysis and judge for task completion
+- Banning them (incentive, nudging theory)
+- How do you detect whether someone performed 
+
+Add-on/plugins:
+- streaming service, Netflix, beginning of an episode, exercise workout, every time an actor did something, 
+- while you are watching, app will prompt users to do it
+- AI assistance:
+- exo + entertainment
+- wellbeing, social intervention, 
+- Hulu watch parties
+- love island  
+- why it is not trivial --  
+- interview/survey/A-B testing (5 to 20 people)
+- 
+
+=====================
+# Group 2:
+- broader category: social network
+- social media app for coders 
+- projects they are building out,
+- stack overflow, forums, social components
+- showcase projects, friends list, communicate (GitHub)
+- publicly and privately
+- Github + stack-overflow + reddit
+- baseline: https://www.teamblind.com
+
+Potential improvements:
+- many coders are neurodivergent (e.g., are on the spectrum or have ADHD)
+- many are socially isolated, have issues with communication, need special incentives (e.g., credits, points, prestige points)
+- the coder community has more males than females (3:1) 
+- making a safe, welcoming environment is a solid contribution
+
+- Redesigned stack-overflow (information overload)
+- ChatGPT: data privacy,
+- number of questions (tabs, customized)
+- a survey with programmers
+- Figma + AI mockup
+
+Research: 
+- user engagement (
+- 
+======
+# Group 1:
+
+- broader category: personal finance, collaborative note taking
+- deliverable: a smartphone app
+- key contributions:
+-- grocery shopping, product tracking
+- shopping list, catalog, household 
+- AI features
+- location based notification, reminders
+- collaborative experience 
+- grocery management list
+- coupons (Groupons)
+- time-to-restock reminders, last purchase price
+- competitor analysis
+- user bases:
+
+
+- baseline: ibotta
+
+potential contribution:
+- usability: the entire family can manage/create their grocery list easily
+- automatic order placement, pickup or delivery 
+- location-based notification (e.g., while driving a nearby store, the app will send notification about an items or coupons)
+- coupons, cost saving options
+- price comparisons (done by the app)
+
+---------
+- scanning based on barcode and pull (already purchased)
+- research: family, roommates, party planning,  potlucks, office parties, obsersation 
+- price comparison, coupons saving, frequency
+- diet    
+
+
+==============================================
+Group 3: stack overflow v2.0
+
+UX-UI designer:
+
+- hard to navigate stack overflow
+- general users
+- newer programmers (novice)
+- highly technical questions (expert)
+
+-- problem domain: information density
+-- skill differentiation
+
+- Navigation
+- information overload
+- 800+ user profiles 
+- skill-based organized 
+- complex questions (screen recording, upload code, automated processed) ???
+- surveys, requirement testing, user interviews, a/b testing (5 to 6 users)
+- hostile environment 
+- programmers issues
+- broader the user base
+- stack overflow for business (private channel, stack)
+
+==============================================
+
+Group 2: FitFlix app 
+- Wellbeing, drink water, stretches, moving, inactive
+- Entertainment consumer, fitness enthusiasts, younger adults
+- Problem: sedentary, pandemic environment, 
+- Binge watching, cliff hanger, 92% increasing streaming time (32% increments) 
+- Revenue is increasing
+
+-- Binge watching time-of-day: more watching from individuals (midnight, weekends, daytime, no exercise, water, hydration)
+-- Binge watching content: super bowl, love island, breaking bad,  
+
+- Paired with fitness app
+- Detection: hydration prompts, push-ups, touch downs, 
+- (phone app, laptop)
+- figma prototype 
+- a count-down timer: allow (pass day, penalty day)
+- parental control (kids friendly)
+===============================================
+
+
+## Group 4: presentation > binge scrolling
+Study 2023 : dopamine, hypnotic, lost in time, flow stage
+
+- 10% addicted to social media,   
+- clinical dependency on social media
+- related work is substantial, 
+-- meta, Mark Zuckerberg billions of dollar 
+
+Fyp: 
+- undo  
+- maximize engagement and monetization,
+- advertisement 
+- til Tok was proposed to ban, the ended up creating the 
+- detox (
+- recommendation system (algorithm)
+- Citi training (IRB approval)
+
+-- awareness of 
+-- TikTok, instagram
+-- self-regulation (point-system), neurodivergent,   
+-- specific companies 
+-- psychology 
+
+==============
+ Group 1:
+
+Grocery shopping
+In-store, produce 
+- Coordination among facility members; manual price matching, [inventory management 
+
+Current challenges with current practices
+Roommates, family households, event planners (party items)
+
+- human/social:
+- computation: automated?   
+-- instacart, price comparison 
+-- shirkflation 
+-- 2022/2023 not updated
+-- paper points 
+
+== notion 
+
+-- price update (ibotta)
+
+===========================
+Group 4:
+
+Survey: 12 responses 
+>> 12 questions
+>> 
+> outlet: email/  
+- questions:
+-- open-ended 
+
+
+==
+Roommates: 5
+Family members: 4 
+Event planners:
+
+================================================================
+Group 1: Smart list
+Challenge with roommate
+- how much something is purchased
+- card sorting
+- different times of the week
+-- an inventory to view and track pantry items
+- save in apps coupons
+- collaborative list and task assignment on grocery tips
+- location based reminded
+
+
+Roles: grocery stores, user1 , user 2
+- wifi (offline store)
+
+Nicol:
+- 
+
+
+
+
+==============
+Group 3:
+
+Emily:
+- user research, conducting surveys
+- identifying key user cases
+
+Lauren:
+- UI/UX design with Figma
+
+Ethan:
+- technical analyst
+
+
+Tylor:
+- project management and implementation
+Specifically exact high
+
+
+
+
+Group 4:
++++++++++++++++
+- IRB application submission by Friday 
+- 
+
+
+Group 2:
++++++++++++++++
+
+fitflex
+
+Anna:
+- wireframes (design)
+
+Max:
+- teachable machine model (integrating) javascript frame
+-
+
+Elyse:
+- 3 interview <>
+-    
+
+===================================================
+
+
+7 +/ 2
+
+
+------------------
+
+Group 1:
+-------------
+- visual of color themes, UI library,  
+- An Interview with Joel 
+  
+
+Neha:
+- adding more details in the card/
+- finalizing the list of categories 
+
+Jasper:
+- coupon extraction UI
+
+
+Nicole:
+- Adding more details on the list item view
+- Thinking more on the Google Lens window
+
+
+
+===============
+> optimal videos 
+- Frequency matters (3 minutes, 5 minutes)
+- Nudging (activities: jumping jack, walking in place) 
+- solo vs group 
+
+- caput videos, 
+- trending video (TikTok)
+- TV shows
+
+
+
+How to create a dashboard:
+- screen time
+- other statistic like how long they manv been watching
+- how many time they followed the instructions
+- how to maximize the space
+- 
+
+
+Anna:
+- companion app on smartphone
+- figma lo-fi (fit bit)
+- 
+
+=============================================
+Group 3:
+- Requirements (100%)
+- survey (18 person) -- excel sheet
+- preliminary interview data (N:3) 
+- interview data (N:3) 
+=======
+
+--> low-fi prototype (diversity) 
+>> A/B/C/D testing 
+====================================
+
+
+Group 2:
+
+Breaking down criteria:
+- time based
+-- constant 
+---- 2 minute, 4 minute
+
+
+- content based:
+-- YouTube view histogram
+-- segments
+
+Task criteria: 
+- preference based
+- context based
+
+Sensing part:
+- 
+
+=============================================
+
+

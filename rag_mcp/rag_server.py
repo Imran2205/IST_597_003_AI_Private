@@ -13,6 +13,10 @@ from mcp.server.fastmcp import FastMCP
 import numpy as np
 import torch
 
+from pathlib import Path
+
+
+
 # Make absolutely sure we won't use MPS even if available
 if hasattr(torch.backends, "mps"):
     # hard-disable MPS so libs don't probe it
@@ -261,6 +265,36 @@ async def scrape_wikipedia(url: str) -> str:
         logger.error(error_msg)
         return error_msg
 #endregion Wikipedia tool
+
+
+# new tool
+BASE_DIR = Path(__file__).resolve().parent   # folder where rag_server.py lives
+TX_DIR = BASE_DIR / "my_files"   # <-- use subdirectory next to rag_server.py
+TX_CHUNK = 1000
+
+@mcp.tool()
+async def ingest_tx() -> str:
+    """
+    Ingest local corpus into the vector DB.
+
+    Reads all *.txt under ./my_files/, splits each file into ~TX_CHUNK-char
+    pieces, prefixes chunks with their relative file path for provenance, and
+    appends them to the global FAISS-backed `vector_store` so they are
+    retrievable via `query_knowledge`.
+    Returns a brief count summary.
+    """
+    files = sorted(TX_DIR.rglob("*.txt"))
+    chunks: list[str] = []
+    for f in files:
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        rel = f.relative_to(TX_DIR).as_posix()
+        for i in range(0, len(text), TX_CHUNK):
+            piece = text[i:i+TX_CHUNK].strip()
+            if piece:
+                chunks.append(f"[FILE] {rel}\n{piece}")
+    if chunks:
+        vector_store.add_texts(chunks)  # uses your lazy init + FAISS add
+    return f"files={len(files)}, chunks={len(chunks)}, total_docs={len(vector_store.documents)}"
 
 #region Knowledge query tools
 @mcp.tool()
