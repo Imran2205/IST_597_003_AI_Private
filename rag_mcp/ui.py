@@ -1,6 +1,7 @@
 import streamlit as st
 import asyncio
 from rag_client import OllamaMCPClient
+import pyttsx3
 
 # =========================
 # Streamlit UI
@@ -25,6 +26,11 @@ async def connect_to_server(server_url: str, model: str):
     success, message = await client.initialize_tools()
     return client, success, message
 
+engine = pyttsx3.init()
+engine.setProperty('rate', 125)
+engine.say("stop listening")
+engine.runAndWait()
+
 
 def main():
     st.set_page_config(page_title="MCP + Ollama Chat", page_icon="🤖", layout="wide")
@@ -33,7 +39,8 @@ def main():
 
     # Sidebar
     with st.sidebar:
-        st.title("⚙️ Settings")
+        st.title("⚙️ Settings")        
+
 
         server_url = st.text_input(
             "MCP Server URL",
@@ -84,10 +91,14 @@ def main():
     st.title("🤖 MCP + Ollama Chat")
     st.markdown("Chat with your AI assistant powered by Ollama and MCP tools")
 
+    # engine.say("stop listening ")
+    # engine.runAndWait()
+
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+            
 
     # Chat input
     if prompt := st.chat_input("Type your message here...", disabled=not st.session_state.connected):
@@ -109,7 +120,14 @@ def main():
                     st.session_state.client.chat_stream(prompt)
                 )
 
+                print(full_response)
+                engine.say(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
+                
+                # tts
+                # get_tts().say(full_response)
+                # get_tts().runAndWait()
+
             except Exception as e:
                 error_msg = f"❌ Error: {e}"
                 st.error(error_msg)
