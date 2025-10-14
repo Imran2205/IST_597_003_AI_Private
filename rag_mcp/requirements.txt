@@ -1,0 +1,23 @@
+# MCP Agent Requirements
+# Core dependencies for MCP-based chatbot with FAISS vector store
+
+# MCP Protocol
+mcp>=1.0.0
+httpx>=0.27.0
+
+# Web interface
+gradio>=4.0.0
+
+# Web scraping
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# Vector embeddings and storage
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.4  # Use faiss-gpu if you have CUDA available
+
+# Utilities
+numpy>=1.24.0
+
+# Optional: For better performance
+# torch>=2.0.0  # Required by sentence-transformers, usually installed automatically
