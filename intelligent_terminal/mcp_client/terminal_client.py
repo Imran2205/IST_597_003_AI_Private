@@ -86,6 +86,7 @@ class OllamaMCPClient:
                        "- The available tool names from tool description provided."
                        "- Do not leave the function name blank."
                        "- Do not invent new tool names."
+                       "- Please use tool to run any command. Please always give tool call as tool_calls object"
                        "- Whenever you receive a tool result, you must always explain it back to the user in natural language."
                        "- After every tool result, you must always respond to the user with a clear explanation."
                        "- When you get the response from the tool:"
@@ -160,7 +161,7 @@ class OllamaMCPClient:
                         # actually calling the tool in mcp server
                         tool_result = await self.session.call_tool(tool_name, tool_args)
 
-                        print(tool)
+                        # print(tool_result.content[0].text)
                         tool_call_id = str(uuid.uuid4())
 
                         self.messages.append({

@@ -16,6 +16,9 @@ import torch
 from pathlib import Path
 
 
+vc_selection = ""
+
+
 
 # Make absolutely sure we won't use MPS even if available
 if hasattr(torch.backends, "mps"):
@@ -28,6 +31,10 @@ from sentence_transformers import SentenceTransformer
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import logging
+import os
+import asyncio
+from mcp.server.fastmcp import FastMCP
+from ollama import Client
 
 # faiss.omp_set_num_threads(1)
 # torch.set_num_threads(1)
@@ -38,6 +45,11 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastMCP server
 mcp = FastMCP("llm-agent-tools", port=3000)
+
+
+# Configure Ollama host (same default as your server)
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+_ollama_client = Client(host=OLLAMA_HOST)
 
 # Global vector store instance
 class VectorStoreManager:
@@ -265,6 +277,96 @@ async def scrape_wikipedia(url: str) -> str:
         logger.error(error_msg)
         return error_msg
 #endregion Wikipedia tool
+
+def _build_messages(prompt: str):
+    """Match the training/system format you used for the server."""
+    global vc_selection
+    return [
+        {
+            "role": "system",
+            "content": "Convert the following natural language command to the correct voice control command format."
+        },
+        {
+            "role": "user",
+            "content": f"{prompt} | selection: {vc_selection}"
+        },
+    ]
+
+@mcp.tool()
+async def translate_to_vc(query: str) -> str:
+    """
+    Convert a natural-language voice command into the structured voice command.
+
+    Args:
+        query: The user’s natural-language command.
+
+    Returns:
+        The translated voice command as a plain string.
+
+    Raises:
+        RuntimeError on empty model response.
+    """
+    global vc_selection
+    messages = _build_messages(query)
+    print(messages)
+    model: str = "vc_finetuned"
+
+    # Call the blocking Ollama client off the event loop
+    try:
+        resp = await asyncio.to_thread(
+            _ollama_client.chat,
+            model=model,
+            messages=messages,
+            options={
+                "temperature": 1.0,
+                "top_p": 0.95,
+                "top_k": 64,
+                "num_predict": 125,
+            },
+        )
+    except Exception as e:
+        # Keep it as a string return if you prefer not to raise
+        raise RuntimeError(f"Ollama chat error: {e}. Ensure model '{model}' is loaded and {OLLAMA_HOST} is reachable.")
+
+    content = (resp.get("message") or {}).get("content", "").strip()
+
+    if 'SELECT' in content:
+        vc_selection = content.split()[-1].strip()
+    else:
+        vc_selection = ""
+
+    content = "##VC##" + content + "##VC##"
+    print(">>>", content)
+    if not content:
+        raise RuntimeError(
+            f"Empty response from model '{model}'. "
+            f"Check that Ollama is running at {OLLAMA_HOST} and the model is available."
+        )
+
+    return content
+
+
+@mcp.tool()
+async def translate_to_cc(query: str) -> str:
+    """
+    Convert a natural-language voice command into the structured voice command. when the command is provided with CC:
+
+    Args:
+        query: The user’s natural-language command.
+
+    Returns:
+        The translated voice command as a plain string.
+
+    Raises:
+        RuntimeError on empty model response.
+    """
+    global vc_selection
+
+    content = "##VC##" + query.split(':')[-1] + "##VC##"
+
+    print("CC>>", content)
+
+    return content
 
 
 # new tool

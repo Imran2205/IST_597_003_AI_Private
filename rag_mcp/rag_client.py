@@ -23,6 +23,9 @@ class OllamaMCPClient:
             "- Do not invent tool names.\n"
             "- When you call a tool, provide valid arguments matching its schema.\n"
             "- After any tool result, explain the result clearly to the user.\n"
+            "- If users query starts with VC: please translate the query that comes after VC: to voce command using tool. After translation only return the translated command without adding any explanation to it."
+            "- If users query starts with CC: please translate the query that comes after CC: to voce command using tool: translate_to_cc. After translation only return the translated command without adding any explanation to it."
+
         )
 
     async def initialize_tools(self):
@@ -43,6 +46,8 @@ class OllamaMCPClient:
                                 "parameters": tool.inputSchema,
                             },
                         })
+
+                    print(self.available_tools)
 
             self.messages = [{"role": "system", "content": self.system_prompt}]
             return True, f"Connected! Tools available: {len(self.available_tools)}"

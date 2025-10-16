@@ -28,12 +28,12 @@ async def connect_to_server(server_url: str, model: str):
 
 engine = pyttsx3.init()
 engine.setProperty('rate', 125)
-engine.say("stop listening")
+engine.say("")
 engine.runAndWait()
 
 
 def main():
-    st.set_page_config(page_title="MCP + Ollama Chat", page_icon="🤖", layout="wide")
+    st.set_page_config(page_title="MCP for Voice Command", page_icon="🤖", layout="wide")
 
     init_session_state()
 
@@ -88,7 +88,7 @@ def main():
         """)
 
     # Main chat interface
-    st.title("🤖 MCP + Ollama Chat")
+    st.title("🤖 MCP for Voice Command")
     st.markdown("Chat with your AI assistant powered by Ollama and MCP tools")
 
     # engine.say("stop listening ")
@@ -116,12 +116,15 @@ def main():
         with st.chat_message("assistant"):
             try:
                 # Use the synchronous generator (no async context managers)
+
                 full_response = st.write_stream(
                     st.session_state.client.chat_stream(prompt)
                 )
 
                 print(full_response)
-                engine.say(full_response)
+                if "##VC##" in full_response:
+                    engine.say(full_response.split("##VC##")[1])
+
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
                 
                 # tts
