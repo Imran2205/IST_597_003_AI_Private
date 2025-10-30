@@ -18,6 +18,12 @@ def init_session_state():
         st.session_state.server_url = "http://127.0.0.1:3000/mcp"
     if "model_name" not in st.session_state:
         st.session_state.model_name = "llama3.2:3b"
+    if "audio_enabled" not in st.session_state:
+        st.session_state.audio_enabled = False
+    if "tts_engine" not in st.session_state:
+        # Initialize TTS engine once
+        st.session_state.tts_engine = pyttsx3.init()
+        st.session_state.tts_engine.setProperty('rate', 150)
 
 
 async def connect_to_server(server_url: str, model: str):
@@ -25,11 +31,6 @@ async def connect_to_server(server_url: str, model: str):
     client = OllamaMCPClient(model=model, server_url=server_url)
     success, message = await client.initialize_tools()
     return client, success, message
-
-engine = pyttsx3.init()
-engine.setProperty('rate', 125)
-engine.say("stop listening")
-engine.runAndWait()
 
 
 def main():
@@ -41,7 +42,50 @@ def main():
     with st.sidebar:
         st.title("⚙️ Settings")        
 
+        # Audio Toggle Section
+        st.subheader("🔊 Audio Settings")
+        audio_toggle = st.toggle(
+            "Enable Text-to-Speech",
+            value=st.session_state.audio_enabled,
+            help="Toggle text-to-speech for assistant responses"
+        )
+        st.session_state.audio_enabled = audio_toggle
+        
+        if audio_toggle:
+            st.info("🔊 Audio is enabled")
+            
+            # Optional: Add TTS settings when audio is enabled
+            with st.expander("TTS Settings"):
+                rate = st.slider(
+                    "Speech Rate", 
+                    min_value=100, 
+                    max_value=300, 
+                    value=150, 
+                    step=10,
+                    help="Adjust the speed of speech"
+                )
+                if st.session_state.tts_engine:
+                    st.session_state.tts_engine.setProperty('rate', rate)
+                
+                # Optional: Add volume control
+                volume = st.slider(
+                    "Volume", 
+                    min_value=0.0, 
+                    max_value=1.0, 
+                    value=1.0, 
+                    step=0.1,
+                    help="Adjust the volume of speech"
+                )
+                if st.session_state.tts_engine:
+                    st.session_state.tts_engine.setProperty('volume', volume)
+        else:
+            st.info("🔇 Audio is disabled")
+        
+        st.divider()
 
+        # Connection Settings
+        st.subheader("🔌 Connection")
+        
         server_url = st.text_input(
             "MCP Server URL",
             value=st.session_state.server_url,
@@ -82,6 +126,7 @@ def main():
         st.markdown("""
         ### 💡 Tips
         - Connect to your MCP server first
+        - Toggle audio for voice feedback
         - Ask questions or request tool usage
         - Responses stream in real-time
         - Tool calls are executed automatically
@@ -91,14 +136,10 @@ def main():
     st.title("🤖 MCP + Ollama Chat")
     st.markdown("Chat with your AI assistant powered by Ollama and MCP tools")
 
-    # engine.say("stop listening ")
-    # engine.runAndWait()
-
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-            
 
     # Chat input
     if prompt := st.chat_input("Type your message here...", disabled=not st.session_state.connected):
@@ -121,12 +162,16 @@ def main():
                 )
 
                 print(full_response)
-                engine.say(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
                 
-                # tts
-                # get_tts().say(full_response)
-                # get_tts().runAndWait()
+                # Only speak if audio is enabled
+                if st.session_state.audio_enabled and st.session_state.tts_engine:
+                    try:
+                        st.session_state.tts_engine.say(full_response)
+                        st.session_state.tts_engine.runAndWait()
+                    except Exception as tts_error:
+                        st.warning(f"TTS Error: {tts_error}")
+                
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
 
             except Exception as e:
                 error_msg = f"❌ Error: {e}"

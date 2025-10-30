@@ -272,28 +272,53 @@ BASE_DIR = Path(__file__).resolve().parent   # folder where rag_server.py lives
 TX_DIR = BASE_DIR / "my_files"   # <-- use subdirectory next to rag_server.py
 TX_CHUNK = 1000
 
+from docling.document_converter import DocumentConverter
+
 @mcp.tool()
 async def ingest_tx() -> str:
     """
     Ingest local corpus into the vector DB.
-
-    Reads all *.txt under ./my_files/, splits each file into ~TX_CHUNK-char
+    Reads all *.txt and *.pdf under ./my_files/, splits each file into ~TX_CHUNK-char
     pieces, prefixes chunks with their relative file path for provenance, and
     appends them to the global FAISS-backed `vector_store` so they are
     retrievable via `query_knowledge`.
     Returns a brief count summary.
     """
-    files = sorted(TX_DIR.rglob("*.txt"))
+    # Get both .txt and .pdf files
+    txt_files = sorted(TX_DIR.rglob("*.txt"))
+    pdf_files = sorted(TX_DIR.rglob("*.pdf"))
+    files = txt_files + pdf_files
+    
     chunks: list[str] = []
+    
     for f in files:
-        text = f.read_text(encoding="utf-8", errors="ignore")
         rel = f.relative_to(TX_DIR).as_posix()
+        
+        # Extract text based on file type
+        if f.suffix.lower() == '.pdf':
+            try: 
+                # read pdf with docling               
+                converter = DocumentConverter()
+                result = converter.convert(f)
+
+                # Print Markdown to stdout.
+                text = result.document.export_to_markdown()
+
+            except Exception as e:
+                print(f"Error reading PDF {f}: {e}")
+                continue
+        else:  # .txt file
+            text = f.read_text(encoding="utf-8", errors="ignore")
+        
+        # Split into chunks (same logic as before)
         for i in range(0, len(text), TX_CHUNK):
             piece = text[i:i+TX_CHUNK].strip()
             if piece:
                 chunks.append(f"[FILE] {rel}\n{piece}")
+    
     if chunks:
         vector_store.add_texts(chunks)  # uses your lazy init + FAISS add
+    
     return f"files={len(files)}, chunks={len(chunks)}, total_docs={len(vector_store.documents)}"
 
 #region Knowledge query tools

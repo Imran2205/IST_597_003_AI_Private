@@ -23,6 +23,12 @@ class OllamaMCPClient:
             "- Do not invent tool names.\n"
             "- When you call a tool, provide valid arguments matching its schema.\n"
             "- After any tool result, explain the result clearly to the user.\n"
+            "- When you call a tool, provide valid arguments matching its schema.\n"
+            "- After any tool result, explain the result clearly to the user.\n"
+            "- When you want to run a tool, ALWAYS include its exact name.\n"
+            "- Do not leave the function name blank.\n"
+            "- Do not invent new tool names.\n"
+            "- Please use tool to run any command. Please always give tool call as tool_calls object.\n"
         )
 
     async def initialize_tools(self):
