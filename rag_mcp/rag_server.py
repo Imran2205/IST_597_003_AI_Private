@@ -9,16 +9,11 @@ Uses FastMCP for easy server setup with arithmetic and Wikipedia tools
 
 from typing import Any
 import httpx
-from mcp.server.fastmcp import FastMCP
 import numpy as np
 import torch
-
-from pathlib import Path
-
+import os
 
 vc_selection = ""
-
-
 
 # Make absolutely sure we won't use MPS even if available
 if hasattr(torch.backends, "mps"):
@@ -26,18 +21,27 @@ if hasattr(torch.backends, "mps"):
     torch.backends.mps.is_available = lambda: False  # type: ignore
     torch.backends.mps.is_built = lambda: False
 
+from pathlib import Path
+import base64
+import subprocess
+import tempfile
+from PIL import Image
+import requests
+import json
+
+# Now import sentence_transformers and other torch-dependent libraries
 import faiss
+# faiss.omp_set_num_threads(1)
+# torch.set_num_threads(1)
+
 from sentence_transformers import SentenceTransformer
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import logging
-import os
 import asyncio
 from mcp.server.fastmcp import FastMCP
 from ollama import Client
 
-# faiss.omp_set_num_threads(1)
-# torch.set_num_threads(1)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -292,13 +296,15 @@ def _build_messages(prompt: str):
         },
     ]
 
+
 @mcp.tool()
 async def translate_to_vc(query: str) -> str:
     """
     Convert a natural-language voice command into the structured voice command.
+    Speaks the translated command immediately on the server side.
 
     Args:
-        query: The user’s natural-language command.
+        query: The user's natural-language command.
 
     Returns:
         The translated voice command as a plain string.
@@ -325,7 +331,6 @@ async def translate_to_vc(query: str) -> str:
             },
         )
     except Exception as e:
-        # Keep it as a string return if you prefer not to raise
         raise RuntimeError(f"Ollama chat error: {e}. Ensure model '{model}' is loaded and {OLLAMA_HOST} is reachable.")
 
     content = (resp.get("message") or {}).get("content", "").strip()
@@ -335,24 +340,29 @@ async def translate_to_vc(query: str) -> str:
     else:
         vc_selection = ""
 
-    content = "##VC##" + content + "##VC##"
-    print(">>>", content)
+    content_formatted = "##VC##" + content + "##VC##"
+    print(">>>", content_formatted)
+
     if not content:
         raise RuntimeError(
             f"Empty response from model '{model}'. "
             f"Check that Ollama is running at {OLLAMA_HOST} and the model is available."
         )
 
-    return content
+    # Speak the translated command on server side
+    speak_text(content)
+
+    return content_formatted
 
 
 @mcp.tool()
 async def translate_to_cc(query: str) -> str:
     """
-    Convert a natural-language voice command into the structured voice command. when the command is provided with CC:
+    Convert a natural-language voice command into the structured voice command when the command is provided with CC:
+    Speaks the command immediately on the server side.
 
     Args:
-        query: The user’s natural-language command.
+        query: The user's natural-language command.
 
     Returns:
         The translated voice command as a plain string.
@@ -362,11 +372,112 @@ async def translate_to_cc(query: str) -> str:
     """
     global vc_selection
 
-    content = "##VC##" + query.split(':')[-1] + "##VC##"
+    extracted_command = query.split(':')[-1].strip()
+    content = "##VC##" + extracted_command + "##VC##"
 
     print("CC>>", content)
 
+    # Speak the command on server side
+    speak_text(extracted_command)
+
     return content
+
+
+@mcp.tool()
+async def speak_on_server(text: str) -> str:
+    """
+    Speak text on the server side using TTS.
+    Useful for providing audio feedback without waiting for UI rendering.
+
+    Args:
+        text: Text to speak
+
+    Returns:
+        Confirmation message
+    """
+    try:
+        speak_text(text)
+        return f"Speaking: {text[:50]}..." if len(text) > 50 else f"Speaking: {text}"
+    except Exception as e:
+        error_msg = f"Error speaking text: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+
+# @mcp.tool()
+# async def translate_to_vc(query: str) -> str:
+#     """
+#     Convert a natural-language voice command into the structured voice command.
+#
+#     Args:
+#         query: The user’s natural-language command.
+#
+#     Returns:
+#         The translated voice command as a plain string.
+#
+#     Raises:
+#         RuntimeError on empty model response.
+#     """
+#     global vc_selection
+#     messages = _build_messages(query)
+#     print(messages)
+#     model: str = "vc_finetuned"
+#
+#     # Call the blocking Ollama client off the event loop
+#     try:
+#         resp = await asyncio.to_thread(
+#             _ollama_client.chat,
+#             model=model,
+#             messages=messages,
+#             options={
+#                 "temperature": 1.0,
+#                 "top_p": 0.95,
+#                 "top_k": 64,
+#                 "num_predict": 125,
+#             },
+#         )
+#     except Exception as e:
+#         # Keep it as a string return if you prefer not to raise
+#         raise RuntimeError(f"Ollama chat error: {e}. Ensure model '{model}' is loaded and {OLLAMA_HOST} is reachable.")
+#
+#     content = (resp.get("message") or {}).get("content", "").strip()
+#
+#     if 'SELECT' in content:
+#         vc_selection = content.split()[-1].strip()
+#     else:
+#         vc_selection = ""
+#
+#     content = "##VC##" + content + "##VC##"
+#     print(">>>", content)
+#     if not content:
+#         raise RuntimeError(
+#             f"Empty response from model '{model}'. "
+#             f"Check that Ollama is running at {OLLAMA_HOST} and the model is available."
+#         )
+#
+#     return content
+#
+#
+# @mcp.tool()
+# async def translate_to_cc(query: str) -> str:
+#     """
+#     Convert a natural-language voice command into the structured voice command. when the command is provided with CC:
+#
+#     Args:
+#         query: The user’s natural-language command.
+#
+#     Returns:
+#         The translated voice command as a plain string.
+#
+#     Raises:
+#         RuntimeError on empty model response.
+#     """
+#     global vc_selection
+#
+#     content = "##VC##" + query.split(':')[-1] + "##VC##"
+#
+#     print("CC>>", content)
+#
+#     return content
 
 
 # new tool
@@ -457,30 +568,493 @@ async def clear_knowledge_base() -> str:
 
 
 # Server Status Tool
-@mcp.tool()
 async def get_server_status() -> str:
     """Get the current status of the MCP server and vector database.
-    
+
     Returns:
         Status information including number of stored documents
     """
     doc_count = len(vector_store.documents) if vector_store.documents else 0
     has_index = vector_store.index is not None
     is_initialized = vector_store.initialized
-    
+
     status = f"""
         MCP Server Status:
         - Server: Running
         - Vector Store Initialized: {is_initialized}
         - FAISS Index Created: {has_index}
         - Stored Documents: {doc_count}
-        - Available Tools: add, subtract, multiply, divide, scrape_wikipedia, query_knowledge, clear_knowledge_base, get_server_status
+        - Available Tools: 
+          * Arithmetic: add, subtract, multiply, divide
+          * Voice Commands: translate_to_vc, translate_to_cc, execute_voice_command
+          * Screen Analysis: parse_screen_with_ocr, find_text_number
+          * Knowledge: scrape_wikipedia, query_knowledge, clear_knowledge_base, ingest_tx
+          * Utilities: speak_on_server, get_server_status
 
         Ready to accept requests!
         """
     return status.strip()
 
 #endregion knowledge query tools
+import pyautogui
+from PIL import Image, ImageGrab
+from paddleocr import PaddleOCR
+import pyttsx3
+import threading
+
+# Initialize OCR once
+_ocr_instance = None
+_tts_engine = None
+_tts_lock = threading.Lock()
+
+
+def get_ocr():
+    """Lazy initialization of OCR model"""
+    global _ocr_instance
+    if _ocr_instance is None:
+        _ocr_instance = PaddleOCR(
+            text_detection_model_name="PP-OCRv5_mobile_det",
+            text_recognition_model_name="PP-OCRv5_mobile_rec",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+        )
+    return _ocr_instance
+
+
+_tts_lock = threading.Lock()
+
+
+def speak_text(text_to_speak: str):
+    """Speak text using TTS in a separate thread (server-side)"""
+
+    def speak():
+        try:
+            # Acquire lock before initializing engine
+            with _tts_lock:
+                engine = pyttsx3.init()
+                engine.setProperty('rate', 150)
+                engine.say(text_to_speak)
+                engine.runAndWait()
+                # Don't call engine.stop() - causes issues
+                del engine  # Let garbage collector handle it
+
+            logger.info(f"TTS spoke: {text_to_speak[:50]}...")
+        except Exception as e:
+            logger.error(f"TTS Error: {e}")
+
+    tts_thread = threading.Thread(target=speak, daemon=True)
+    tts_thread.start()
+
+
+# @mcp.tool()
+# async def take_screenshot() -> str:
+#     """
+#     Take a screenshot of the current screen and save it to a temporary file.
+#
+#     Returns:
+#         Path to the saved screenshot file
+#     """
+#     try:
+#         # Use a more reliable temporary file creation
+#         temp_dir = tempfile.gettempdir()
+#         screenshot_path = os.path.join(temp_dir, f"screenshot_{os.getpid()}_{int(asyncio.get_event_loop().time())}.png")
+#
+#         logger.info(f"Attempting to save screenshot to: {screenshot_path}")
+#
+#         # Use Pillow's ImageGrab which is more reliable
+#         try:
+#             screenshot = ImageGrab.grab()
+#             screenshot.save(screenshot_path, 'PNG')
+#             logger.info(f"Screenshot saved successfully to: {screenshot_path}")
+#         except Exception as e:
+#             logger.warning(f"ImageGrab failed: {e}, trying pyautogui...")
+#             # Fallback to pyautogui
+#             import pyautogui
+#             screenshot = pyautogui.screenshot()
+#             screenshot.save(screenshot_path, 'PNG')
+#             logger.info(f"Screenshot saved via pyautogui to: {screenshot_path}")
+#
+#         # Verify the file actually exists
+#         if not os.path.exists(screenshot_path):
+#             raise FileNotFoundError(f"Screenshot file was not created at {screenshot_path}")
+#
+#         file_size = os.path.getsize(screenshot_path)
+#         logger.info(f"Screenshot file size: {file_size} bytes")
+#
+#         return screenshot_path  # Return just the path, not a message
+#
+#     except Exception as e:
+#         error_msg = f"Error taking screenshot: {str(e)}"
+#         logger.error(error_msg)
+#         return f"ERROR: {error_msg}"
+
+
+def _take_screenshot_internal() -> str:
+    """
+    Internal function to take a screenshot and save it to a temporary file.
+    Returns the path to the saved screenshot file.
+    """
+    try:
+        # Create temporary file path
+        temp_dir = '/Users/ibk5106/Desktop/IST_courses/TA/IST_597_003_AI_Private/rag_mcp/screenshots' #  tempfile.gettempdir()
+        screenshot_path = os.path.join(
+            temp_dir,
+            f"screenshot_{os.getpid()}_{int(asyncio.get_event_loop().time())}.png"
+        )
+
+        logger.info(f"Taking screenshot, will save to: {screenshot_path}")
+
+        # Use Pillow's ImageGrab which is more reliable
+        try:
+            screenshot = ImageGrab.grab()
+            screenshot.save(screenshot_path, 'PNG')
+            logger.info(f"Screenshot saved successfully to: {screenshot_path}")
+        except Exception as e:
+            logger.warning(f"ImageGrab failed: {e}, trying pyautogui...")
+            # Fallback to pyautogui
+            import pyautogui
+            screenshot = pyautogui.screenshot()
+            screenshot.save(screenshot_path, 'PNG')
+            logger.info(f"Screenshot saved via pyautogui to: {screenshot_path}")
+
+        # Verify the file actually exists
+        if not os.path.exists(screenshot_path):
+            raise FileNotFoundError(f"Screenshot file was not created at {screenshot_path}")
+
+        file_size = os.path.getsize(screenshot_path)
+        logger.info(f"Screenshot file size: {file_size} bytes")
+
+        return screenshot_path
+
+    except Exception as e:
+        error_msg = f"Error taking screenshot: {str(e)}"
+        logger.error(error_msg)
+        raise Exception(error_msg)
+
+
+import re
+
+
+@mcp.tool()
+async def parse_screen_with_ocr() -> str:
+    """
+    Take a screenshot of the current screen and parse it using OCR to extract text and numbered labels.
+    This function automatically handles screenshot capture and OCR parsing.
+
+    Handles two number formats:
+    1. Embedded numbers: "2chrome" -> extracts "2" and "chrome"
+    2. Separate numbers: "2" near "Chrome" -> creates "2 Chrome"
+
+    Returns:
+        Markdown formatted string with detected numbers and their associated text
+    """
+    screenshot_path = None
+    try:
+        # Step 1: Take screenshot internally
+        logger.info("Taking screenshot for OCR analysis...")
+        screenshot_path = _take_screenshot_internal()
+
+        # Step 2: Verify file exists
+        if not os.path.exists(screenshot_path):
+            error_msg = f"Screenshot file not found at: {screenshot_path}"
+            logger.error(error_msg)
+            return f"ERROR: {error_msg}"
+
+        logger.info(f"Parsing screenshot at: {screenshot_path}")
+
+        # Step 3: Run OCR
+        ocr = get_ocr()
+        result = ocr.predict(screenshot_path)
+
+        # Step 4: Extract text and positions from PaddleOCR result
+        all_detections = []
+
+        # PaddleOCR returns a list with one dict containing all results
+        if isinstance(result, list) and len(result) > 0:
+            ocr_data = result[0]  # Get first (and only) result dict
+
+            # Extract the arrays we need
+            rec_texts = ocr_data.get('rec_texts', [])
+            rec_scores = ocr_data.get('rec_scores', [])
+            rec_polys = ocr_data.get('rec_polys', [])
+
+            logger.info(f"Found {len(rec_texts)} text items in OCR result")
+
+            # Combine text, scores, and bounding boxes
+            for i, (text, score) in enumerate(zip(rec_texts, rec_scores)):
+                # Get bounding box if available
+                bbox = rec_polys[i].tolist() if i < len(rec_polys) else []
+
+                # Calculate center position of bounding box
+                if bbox and len(bbox) >= 4:
+                    x_coords = [point[0] for point in bbox]
+                    y_coords = [point[1] for point in bbox]
+                    center_x = sum(x_coords) / len(x_coords)
+                    center_y = sum(y_coords) / len(y_coords)
+                else:
+                    center_x, center_y = 0, 0
+
+                # Only include items with reasonable confidence and non-empty text
+                if text and text.strip() and score > 0.3:
+                    all_detections.append({
+                        'text': text.strip(),
+                        'confidence': float(score),
+                        'bbox': bbox,
+                        'center_x': center_x,
+                        'center_y': center_y
+                    })
+
+        # Step 5: Process detections to extract number-text mappings
+        number_text_map = []
+        processed_indices = set()
+
+        # Method 1: Extract embedded numbers (e.g., "2chrome" -> "2" + "chrome")
+        for i, det in enumerate(all_detections):
+            text = det['text']
+            # Check if text starts with digit(s) followed by non-digit characters
+            match = re.match(r'^(\d+)([a-zA-Z].*)', text)
+            if match:
+                number = match.group(1)
+                label = match.group(2)
+                number_text_map.append({
+                    'number': number,
+                    'text': label,
+                    'confidence': det['confidence'],
+                    'source': 'embedded',
+                    'position': (int(det['center_x']), int(det['center_y']))
+                })
+                processed_indices.add(i)
+                logger.info(f"Found embedded number: {number}{label}")
+
+        # Method 2: Find standalone numbers and match with nearby text
+        standalone_numbers = []
+        text_labels = []
+
+        for i, det in enumerate(all_detections):
+            if i in processed_indices:
+                continue
+
+            text = det['text']
+
+            # Is it a pure number?
+            if text.isdigit():
+                standalone_numbers.append({
+                    'index': i,
+                    'number': text,
+                    'center_x': det['center_x'],
+                    'center_y': det['center_y'],
+                    'confidence': det['confidence']
+                })
+            # Is it text (not starting with digit)?
+            elif not text[0].isdigit():
+                text_labels.append({
+                    'index': i,
+                    'text': text,
+                    'center_x': det['center_x'],
+                    'center_y': det['center_y'],
+                    'confidence': det['confidence']
+                })
+
+        # Match standalone numbers with nearby text labels
+        for num_det in standalone_numbers:
+            num_value = num_det['number']
+            num_x = num_det['center_x']
+            num_y = num_det['center_y']
+
+            # Find closest text (within 500 pixels)
+            closest_text = None
+            min_distance = float('inf')
+            matched_index = None
+
+            for text_det in text_labels:
+                if text_det['index'] in processed_indices:
+                    continue
+
+                text_x = text_det['center_x']
+                text_y = text_det['center_y']
+
+                # Calculate distance (simple Euclidean)
+                distance = ((num_x - text_x) ** 2 + (num_y - text_y) ** 2) ** 0.5
+
+                # Numbers are usually close to their labels (within ~500px)
+                if distance < 100 and distance < min_distance:
+                    min_distance = distance
+                    closest_text = text_det['text']
+                    matched_index = text_det['index']
+
+            if closest_text:
+                number_text_map.append({
+                    'number': num_value,
+                    'text': closest_text,
+                    'confidence': num_det['confidence'],
+                    'source': 'distance',
+                    'distance': int(min_distance),
+                    'position': (int(num_x), int(num_y))
+                })
+                processed_indices.add(num_det['index'])
+                if matched_index:
+                    processed_indices.add(matched_index)
+                logger.info(
+                    f"Found standalone number {num_value} near '{closest_text}' (distance: {int(min_distance)}px)")
+
+        # Sort by number value
+        number_text_map.sort(key=lambda x: int(x['number']) if x['number'].isdigit() else 999)
+
+        # Step 6: Save full data for debugging
+        screenshot_dir = os.path.dirname(screenshot_path)
+        screenshot_basename = os.path.splitext(os.path.basename(screenshot_path))[0]
+
+        debug_data = {
+            'screenshot_path': screenshot_path,
+            'total_detections': len(all_detections),
+            'number_text_mappings': number_text_map,
+            'all_detections': all_detections,
+            'processing_stats': {
+                'embedded_numbers': len([m for m in number_text_map if m.get('source') == 'embedded']),
+                'distance_matched': len([m for m in number_text_map if m.get('source') == 'distance']),
+                'total_mapped': len(number_text_map)
+            }
+        }
+
+        json_path = os.path.join(screenshot_dir, f"{screenshot_basename}_ocr.json")
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(debug_data, f, indent=2, ensure_ascii=False)
+        logger.info(f"Saved full OCR JSON to: {json_path}")
+
+        # Step 7: Create concise markdown format for the model
+        markdown_lines = [
+            "# Screen Analysis - Numbered Elements\n",
+            f"**Screenshot:** `{screenshot_path}`\n",
+            f"**Total mappings:** {len(number_text_map)}\n",
+            "\n## Number → Element Mapping:\n"
+        ]
+
+        if number_text_map:
+            for item in number_text_map:
+                # Format: **number** → "text" (source: embedded/distance)
+                source_info = f"[{item['source']}]" if 'source' in item else ""
+                markdown_lines.append(f"**{item['number']}** → \"{item['text']}\" {source_info}")
+        else:
+            markdown_lines.append("*No numbered elements found. Make sure 'show numbers' command was executed first.*")
+
+        markdown_output = "\n".join(markdown_lines)
+
+        # Step 8: Save markdown as text file for debugging
+        txt_path = os.path.join(screenshot_dir, f"{screenshot_basename}_ocr.txt")
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write(markdown_output)
+        logger.info(f"Saved OCR text to: {txt_path}")
+
+        logger.info(f"OCR complete: {len(number_text_map)} number-text mappings created")
+        logger.info(f"Debug files: {screenshot_path}, {json_path}, {txt_path}")
+
+        return markdown_output
+
+    except Exception as e:
+        error_msg = f"Error parsing screen with OCR: {str(e)}"
+        logger.error(error_msg)
+        logger.exception("Full traceback:")
+        return f"ERROR: {error_msg}"
+
+
+@mcp.tool()
+async def find_text_number(ocr_result: str, target_text: str) -> str:
+    """
+    Find the number associated with a specific text in OCR results.
+    Searches through the markdown formatted OCR results for the target text.
+
+    Args:
+        ocr_result: Markdown string from parse_screen_with_ocr
+        target_text: The text to search for (e.g., "Home", "Settings")
+
+    Returns:
+        The number associated with the target text (e.g., "5")
+    """
+    try:
+        # Parse the markdown to find number mappings
+        # Look for lines like: **1** → "Home" [embedded]
+
+        target_lower = target_text.lower()
+
+        # Split by lines and look for mapping pattern
+        lines = ocr_result.split('\n')
+
+        for line in lines:
+            # Check if line contains the mapping pattern: **N** → "text"
+            if '→' in line and '**' in line:
+                # Extract number and text
+                parts = line.split('→')
+                if len(parts) == 2:
+                    # Extract number from **N**
+                    number_part = parts[0].strip()
+                    number = number_part.replace('*', '').strip()
+
+                    # Extract text from "text" [source]
+                    text_part = parts[1].strip()
+                    # Remove source indicator like [embedded] or [distance]
+                    text_part = re.sub(r'\[.*?\]', '', text_part).strip()
+                    # Remove quotes
+                    text_part = text_part.strip('"')
+
+                    # Check if target text matches (case-insensitive, partial match)
+                    if target_lower in text_part.lower():
+                        logger.info(f"Found '{target_text}' associated with number: {number}")
+                        return number  # Return just the number
+
+        # If not found
+        error_msg = f"Could not find '{target_text}' among numbered elements. Available elements: check OCR results."
+        logger.warning(error_msg)
+        return error_msg
+
+    except Exception as e:
+        error_msg = f"Error finding text number: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+
+
+@mcp.tool()
+async def execute_voice_command(command: str) -> str:
+    """
+    Execute a voice command by translating it and sending to the UI.
+    This is a wrapper that can be called in multi-step workflows.
+    Speaks the command immediately on the server side.
+
+    Args:
+        command: Natural language command or direct voice command
+
+    Returns:
+        Confirmation message with voice command marker
+    """
+    try:
+        # If command already looks like a voice command, use it directly
+        if any(keyword in command.upper() for keyword in ['CLICK', 'SELECT', 'SCROLL', 'SHOW']):
+            formatted = f"##VC##${command}##VC##"
+            logger.info(f"Executing direct voice command: {command}")
+            print(f"Executing direct voice command: {command}")
+            # Speak immediately on server side
+            speak_text(command)
+
+            return formatted
+        else:
+            # Otherwise translate it
+            translated = await translate_to_cc(command)
+            logger.info(f"Translated and executing: {translated}")
+            print(f"Translated and executing: {translated}")
+
+            # Extract the command between ##VC## markers and speak it
+            if "##VC##" in translated:
+                parts = translated.split("##VC##")
+                if len(parts) >= 2:
+                    voice_cmd = parts[1].strip()
+                    speak_text(voice_cmd)
+
+            return translated
+
+    except Exception as e:
+        error_msg = f"Error executing voice command: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
 
 # Main
 if __name__ == "__main__":
