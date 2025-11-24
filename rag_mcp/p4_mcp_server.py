@@ -150,6 +150,10 @@ class SimpleNavigationWorkflow(Workflow[dict]):
         })
 
 
+def extract_ascii_digits(text: str) -> str:
+    """Extract only ASCII digits (0-9) from text"""
+    return ''.join(c for c in text if c.isascii() and c.isdigit())
+
 @mcp_agent_app.workflow
 class SearchAndClickWorkflow(Workflow[dict]):
     """Workflow: show numbers → OCR → find → click (using mouse)"""
@@ -209,7 +213,7 @@ class SearchAndClickWorkflow(Workflow[dict]):
             match = re.match(r'^(\d+)([a-zA-Z].*)', det['text'])
             if match:
                 number_text_map.append({
-                    'number': match.group(1),
+                    'number': extract_ascii_digits(match.group(1)),  # match.group(1),
                     'text': match.group(2),
                     'center_x': det['center_x'],
                     'center_y': det['center_y']
@@ -237,7 +241,7 @@ class SearchAndClickWorkflow(Workflow[dict]):
 
             if closest_text and closest_text_det:
                 number_text_map.append({
-                    'number': num_det['text'],
+                    'number': extract_ascii_digits(num_det['text']),  # num_det['text'],
                     'text': closest_text,
                     'center_x': closest_text_det['center_x'],  # Use text position
                     'center_y': closest_text_det['center_y']
