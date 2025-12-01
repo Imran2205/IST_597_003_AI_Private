@@ -1,3 +1,8 @@
+- Install pip install paddleocr
+```shell
+pip install paddlepaddle
+pip install paddleocr
+```
 - run the mcp server using:
 ```shell
 python p4_mcp_server.py
