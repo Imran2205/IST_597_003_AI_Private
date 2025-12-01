@@ -2,6 +2,23 @@ import streamlit as st
 import asyncio
 from rag_client import OllamaMCPClient
 import pyttsx3
+import speech_recognition as sr
+import threading
+
+def speak_text(text_to_speak: str):
+    def speak():
+        """The actual work to be done in the thread."""
+        try:
+            engine = pyttsx3.init()
+            engine.setProperty('rate', 150)
+            engine.say(text_to_speak)
+            engine.runAndWait()
+            engine.stop()
+        except Exception as e:
+            print(f"[TTS Error] Could not speak: {e}")
+
+    tts_thread = threading.Thread(target=speak, daemon=True)
+    tts_thread.start()
 
 # =========================
 # Streamlit UI
@@ -17,13 +34,48 @@ def init_session_state():
     if "server_url" not in st.session_state:
         st.session_state.server_url = "http://127.0.0.1:3000/mcp"
     if "model_name" not in st.session_state:
-        st.session_state.model_name = "llama3.2:3b"
+        # st.session_state.model_name = "llama3.2:3b"
+        st.session_state.model_name = "gpt-oss:20b"
     if "audio_enabled" not in st.session_state:
         st.session_state.audio_enabled = False
-    if "tts_engine" not in st.session_state:
-        # Initialize TTS engine once
-        st.session_state.tts_engine = pyttsx3.init()
-        st.session_state.tts_engine.setProperty('rate', 150)
+    if "speech_input" not in st.session_state:
+        st.session_state.speech_input = ""
+    if "listening" not in st.session_state:
+        st.session_state.listening = False
+
+
+def listen_to_microphone():
+    """Listen to microphone and return recognized text."""
+    recognizer = sr.Recognizer()
+    
+    try:
+        with sr.Microphone() as source:
+            st.session_state.listening = True
+            # Adjust for ambient noise
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
+            st.session_state.listening = False
+            
+        # Try to recognize speech using Google's speech recognition
+        try:
+            text = recognizer.recognize_google(audio)
+            return text, None
+        except sr.UnknownValueError:
+            return None, "Could not understand audio"
+        except sr.RequestError as e:
+            # Fallback to Sphinx if Google fails
+            try:
+                text = recognizer.recognize_sphinx(audio)
+                return text, None
+            except:
+                return None, f"Speech recognition error: {e}"
+                
+    except sr.WaitTimeoutError:
+        st.session_state.listening = False
+        return None, "Listening timeout - no speech detected"
+    except Exception as e:
+        st.session_state.listening = False
+        return None, f"Microphone error: {e}"
 
 
 async def connect_to_server(server_url: str, model: str):
@@ -34,7 +86,7 @@ async def connect_to_server(server_url: str, model: str):
 
 
 def main():
-    st.set_page_config(page_title="MCP + Ollama Chat", page_icon="🤖", layout="wide")
+    st.set_page_config(page_title="Knowledge Navigator", page_icon="🤖", layout="wide")
 
     init_session_state()
 
@@ -52,32 +104,7 @@ def main():
         st.session_state.audio_enabled = audio_toggle
         
         if audio_toggle:
-            st.info("🔊 Audio is enabled")
-            
-            # Optional: Add TTS settings when audio is enabled
-            with st.expander("TTS Settings"):
-                rate = st.slider(
-                    "Speech Rate", 
-                    min_value=100, 
-                    max_value=300, 
-                    value=150, 
-                    step=10,
-                    help="Adjust the speed of speech"
-                )
-                if st.session_state.tts_engine:
-                    st.session_state.tts_engine.setProperty('rate', rate)
-                
-                # Optional: Add volume control
-                volume = st.slider(
-                    "Volume", 
-                    min_value=0.0, 
-                    max_value=1.0, 
-                    value=1.0, 
-                    step=0.1,
-                    help="Adjust the volume of speech"
-                )
-                if st.session_state.tts_engine:
-                    st.session_state.tts_engine.setProperty('volume', volume)
+            st.info("🔊 Audio is enabled")            
         else:
             st.info("🔇 Audio is disabled")
         
@@ -127,22 +154,60 @@ def main():
         ### 💡 Tips
         - Connect to your MCP server first
         - Toggle audio for voice feedback
+        - Use 🎤 button for voice input
         - Ask questions or request tool usage
         - Responses stream in real-time
         - Tool calls are executed automatically
         """)
 
     # Main chat interface
-    st.title("🤖 MCP + Ollama Chat")
-    st.markdown("Chat with your AI assistant powered by Ollama and MCP tools")
+    # st.title("🤖 Knowledge Navigator")
+    st.markdown("### I'm P3, Your Knowledge Navigator")
 
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+    
+    # Microphone button above chat input
+    mic_col1, mic_col2, mic_col3 = st.columns([1, 6, 1])
+    
+    with mic_col2:
+        if st.button(
+            "🎤 Click to Speak", 
+            help="Click to use voice input", 
+            disabled=not st.session_state.connected, 
+            use_container_width=True
+        ):
+            if st.session_state.listening:
+                st.warning("Already listening...")
+            else:
+                with st.spinner("🎤 Listening... Speak now!"):
+                    text, error = listen_to_microphone()
+                    
+                    if text:
+                        st.session_state.speech_input = text
+                        st.success(f"✅ Recognized: {text}")
+                        st.rerun()
+                    elif error:
+                        st.error(error)
 
-    # Chat input
-    if prompt := st.chat_input("Type your message here...", disabled=not st.session_state.connected):
+    
+
+    # chat_input ALWAYS rendered
+    prompt = st.chat_input(
+        "Type your message here… or use 🎤 above",
+        disabled=not st.session_state.connected,
+        key="chat_input"
+    )
+
+    # If we have speech input, override the prompt
+    if st.session_state.speech_input:
+        prompt = st.session_state.speech_input
+        st.session_state.speech_input = ""
+        st.session_state.mic_done = False
+
+    if prompt:
         if not st.session_state.connected:
             st.error("Please connect to the MCP server first!")
             return
@@ -161,13 +226,12 @@ def main():
                     st.session_state.client.chat_stream(prompt)
                 )
 
-                print(full_response)
+                # print(full_response)
                 
                 # Only speak if audio is enabled
-                if st.session_state.audio_enabled and st.session_state.tts_engine:
+                if st.session_state.audio_enabled: # and st.session_state.tts_engine:
                     try:
-                        st.session_state.tts_engine.say(full_response)
-                        st.session_state.tts_engine.runAndWait()
+                        speak_text(full_response)
                     except Exception as tts_error:
                         st.warning(f"TTS Error: {tts_error}")
                 

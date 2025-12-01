@@ -287,7 +287,8 @@ async def ingest_tx() -> str:
     # Get both .txt and .pdf files
     txt_files = sorted(TX_DIR.rglob("*.txt"))
     pdf_files = sorted(TX_DIR.rglob("*.pdf"))
-    files = txt_files + pdf_files
+    png_files = sorted(TX_DIR.rglob("*.png"))
+    files = txt_files + pdf_files + png_files
     
     chunks: list[str] = []
     
@@ -300,21 +301,32 @@ async def ingest_tx() -> str:
                 # read pdf with docling               
                 converter = DocumentConverter()
                 result = converter.convert(f)
-
                 # Print Markdown to stdout.
                 text = result.document.export_to_markdown()
 
             except Exception as e:
                 print(f"Error reading PDF {f}: {e}")
                 continue
-        else:  # .txt file
+        elif f.suffix.lower() == '.txt':
             text = f.read_text(encoding="utf-8", errors="ignore")
+        elif f.suffix.lower() == '.png': # read .png files
+            try:
+                converter = DocumentConverter()
+                result = converter.convert(f)
+                text = result.document.export_to_markdown()
+            
+            except Exception as e:
+                print(f"Error reading PDF {f}: {e}")
+                continue
+        else:
+            pass
+
         
         # Split into chunks (same logic as before)
         for i in range(0, len(text), TX_CHUNK):
             piece = text[i:i+TX_CHUNK].strip()
             if piece:
-                chunks.append(f"[FILE] {rel}\n{piece}")
+                chunks.append(f"[file name: {rel}]\n[chunk:{piece}]\n")
     
     if chunks:
         vector_store.add_texts(chunks)  # uses your lazy init + FAISS add

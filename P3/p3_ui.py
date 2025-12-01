@@ -1,6 +1,7 @@
 import streamlit as st
 import asyncio
-from p3_mcp_client import OllamaMCPClient
+# from p3_mcp_client import OllamaMCPClient
+from rag_client_for_p3 import OllamaMCPClient
 import pyttsx3
 import speech_recognition as sr
 import threading

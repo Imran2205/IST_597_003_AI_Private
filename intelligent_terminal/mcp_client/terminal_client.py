@@ -7,8 +7,6 @@ from mcp.client.stdio import stdio_client
 import ollama
 import uuid
 from mcp.client.streamable_http import streamablehttp_client
-
-
 class OllamaMCPClient:
     def __init__(self, model):
         self.model = model
@@ -214,7 +212,6 @@ class OllamaMCPClient:
     async def cleanup(self):
         await self.exit_stack.aclose()
 
-
 async def main():
     if len(sys.argv) < 2:
         print("Usage: python client.py http://127.0.0.1:3000/mcp")
@@ -228,7 +225,6 @@ async def main():
         await client.communicate()
     finally:
         await client.cleanup()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
